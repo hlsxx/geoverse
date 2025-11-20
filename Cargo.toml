@@ -2,5 +2,10 @@
 name = "geovomit"
 version = "0.0.1"
 edition = "2024"
+description = "A simple library for caching reverse geocoding results"
+license = "MIT"
+authors = ["hlsxx"]
+repository = "https://github.com/hlsxx/geovomit"
+keywords = ["reverse-geocode", "geocode-cache"]
 
 [dependencies]
