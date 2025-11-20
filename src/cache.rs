@@ -58,7 +58,7 @@ impl CacheKey {
 }
 
 #[derive(Default)]
-struct GeoCacheConfigBuilder {
+pub struct GeoCacheConfigBuilder {
   file_path: Option<PathBuf>,
   memory_max_size: Option<usize>,
   disk_max_size: Option<usize>,
