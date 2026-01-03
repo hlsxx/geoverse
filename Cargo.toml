@@ -1,11 +1,13 @@
 [package]
-name = "geovomit"
+name = "geoverse"
 version = "0.0.1"
 edition = "2024"
 description = "A simple library for caching reverse geocoding results"
 license = "MIT"
 authors = ["hlsxx"]
-repository = "https://github.com/hlsxx/geovomit"
+repository = "https://github.com/hlsxx/geoverse"
 keywords = ["reverse-geocode", "geocode-cache"]
 
 [dependencies]
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.148"

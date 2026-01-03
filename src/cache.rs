@@ -5,11 +5,39 @@ use std::{
   path::{Path, PathBuf},
 };
 
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
+
 use crate::{
   errors::CountryCodeError, geo::convert_coords_into_microdeg, throw_country_code_error,
 };
 
 type Address = String;
+
+#[derive(Debug, Serialize, Hash, Eq, PartialEq)]
+struct CacheKeyRaw([u8; 20]);
+
+impl<'de> Deserialize<'de> for CacheKeyRaw {
+  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+  where
+    D: Deserializer<'de>,
+  {
+    let s = String::deserialize(deserializer)?;
+    if s.len() != 20 {
+      return Err(serde::de::Error::custom(format!(
+        "Expected 20 chars, got {}",
+        s.len()
+      )));
+    }
+
+    let mut bytes = [0u8; 20];
+    bytes.copy_from_slice(s.as_bytes());
+
+    Ok(CacheKeyRaw(bytes))
+  }
+}
+
+impl CacheKeyRaw {}
 
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub struct CacheKey {
@@ -30,7 +58,7 @@ impl CacheKey {
   /// # Examples
   ///
   /// ```
-  /// use geovomit::cache::CacheKey;
+  /// use geoverse::cache::CacheKey;
   /// let cache_key = CacheKey::try_new(48.1645819, 17.1847104, "sk");
   /// ```
   ///
@@ -54,6 +82,15 @@ impl CacheKey {
       lng,
       lang: lang_as_u16,
     })
+  }
+}
+
+impl Into<CacheKeyRaw> for CacheKey {
+  fn into(self) -> CacheKeyRaw {
+    let s = format!("{};{};{}", self.lang, self.lat, self.lng);
+    let mut bytes = [0u8; 20];
+    bytes.copy_from_slice(s.as_bytes());
+    CacheKeyRaw(bytes)
   }
 }
 
@@ -91,7 +128,7 @@ impl GeoCacheConfigBuilder {
   }
 }
 
-struct GeoCacheConfig {
+pub struct GeoCacheConfig {
   file_path: PathBuf,
   memory_max_size: usize,
   disk_max_size: usize,
@@ -114,17 +151,24 @@ impl GeoCacheConfig {
 }
 
 pub struct GeoCache {
+  config: GeoCacheConfig,
   data: HashMap<CacheKey, Address>,
 }
 
 impl GeoCache {
-  pub fn new() -> Self {
+  pub fn new(config: GeoCacheConfig) -> Self {
     Self {
+      config,
       data: HashMap::new(),
     }
   }
 
-  pub fn init(&mut self) {
+  pub fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::open(&self.config.file_path)?;
+    let json: HashMap<CacheKeyRaw, Address> = serde_json::from_reader(file)?;
+
+    Ok(())
+
     // let file = File::open(path)
   }
 
@@ -157,9 +201,17 @@ mod tests {
   use std::path::PathBuf;
 
   use crate::{
-    cache::{CacheKey, GeoCache, GeoCacheConfig},
+    cache::{CacheKey, CacheKeyRaw, GeoCache, GeoCacheConfig, GeoCacheConfigBuilder},
     errors::{CountryCodeError, GeoCoordError},
   };
+
+  fn create_example_geo_cache_config() -> GeoCacheConfig {
+    GeoCacheConfigBuilder::default().build()
+  }
+
+  fn create_example_geo_cache() -> GeoCache {
+    GeoCache::new(create_example_geo_cache_config())
+  }
 
   #[test]
   fn geocache_config_builder() {
@@ -207,7 +259,7 @@ mod tests {
 
   #[test]
   fn test_cache_get() {
-    let mut geo_cache = GeoCache::new();
+    let mut geo_cache = create_example_geo_cache();
 
     geo_cache
       .insert(
@@ -224,7 +276,7 @@ mod tests {
 
   #[test]
   fn test_cache_get_failed() {
-    let mut geo_cache = GeoCache::new();
+    let mut geo_cache = create_example_geo_cache();
 
     geo_cache
       .insert(
@@ -234,5 +286,19 @@ mod tests {
       .unwrap();
 
     assert_eq!(geo_cache.get((88.1645819, 17.1847104, "sk")).unwrap(), None)
+  }
+
+  #[test]
+  fn convert_geo_key_to_geo_key_raw() {
+    let cache_key = CacheKey::try_new(48.1645819, 17.1847104, "sk").unwrap();
+
+    let cache_key_raw: CacheKeyRaw = cache_key.into();
+
+    assert_eq!(
+      [
+        101, 110, 59, 52, 56, 49, 54, 52, 53, 56, 49, 59, 49, 55, 49, 56, 52, 55, 49, 48
+      ],
+      cache_key_raw.0
+    )
   }
 }

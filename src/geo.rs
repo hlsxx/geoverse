@@ -14,5 +14,7 @@ pub fn convert_coords_into_microdeg(lat: f64, lng: f64) -> Result<(i32, i32), Ge
   let lat = (lat * MILLION).round() as i32;
   let lng = (lng * MILLION).round() as i32;
 
+  println!("lat {lat} lang {lng}");
+
   Ok((lat, lng))
 }
