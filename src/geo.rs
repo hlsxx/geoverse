@@ -1,7 +1,8 @@
 use std::error::Error;
 
 use crate::{
-  errors::CountryCodeError, errors::GeoCoordError, throw_country_code_error, throw_geo_coord_error,
+  errors::CountryCodeError, errors::GeoCoordError, storage::Storage, throw_country_code_error,
+  throw_geo_coord_error,
 };
 
 /// Multiplier to convert degrees to microdegrees (1 degree = 1,000,000 microdegrees)
@@ -64,6 +65,33 @@ pub fn convert_lang_to_u16(lang: &str) -> Result<u16, Box<dyn Error>> {
   if lang.len() == 2 {
     Ok(u16::from_be_bytes([lang_bytes[0], lang_bytes[1]]))
   } else {
-    throw_country_code_error!()
+    throw_country_code_error!(
+      "Invalid country code (must be exactly 2 characters [ISO 3166-1 alpha-2])"
+    )
   }
+}
+
+/// Converts a u16 into a 2-character language code.
+///
+/// Unpacks the u16 by extracting the high and low bytes using big-endian
+/// byte order, then converts them back to ASCII characters.
+///
+/// # Arguments
+/// * `code` - The packed u16 representation of a language code
+///
+/// # Returns
+/// * `Ok(String)` - The 2-character language code
+/// * `Err(GeoCoordError)` - If the bytes don't form valid UTF-8
+///
+/// # Examples
+/// ```
+/// let code = geoverse::geo::convert_lang_to_u16("sk").unwrap();
+/// let lang = geoverse::geo::convert_u16_to_lang(code).unwrap();
+/// assert_eq!(lang, "sk");
+/// ```
+pub fn convert_u16_to_lang(code: u16) -> Result<String, CountryCodeError> {
+  let bytes = code.to_be_bytes();
+  String::from_utf8(bytes.to_vec()).map_err(|_| CountryCodeError {
+    message: "Invalid UTF-8 in language code".to_string(),
+  })
 }

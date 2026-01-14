@@ -10,14 +10,41 @@ use serde_json::Value;
 
 use crate::{
   errors::CountryCodeError,
-  geo::{convert_coords_into_microdeg, convert_lang_to_u16},
+  geo::{convert_coords_into_microdeg, convert_lang_to_u16, convert_u16_to_lang},
   throw_country_code_error,
 };
 
 type Address = String;
 
+/// Raw byte representation of a cache key.
+///
+/// Format: `[lang_code (2 bytes)][';' (1 byte)][lat_str (8 bytes)][';' (1 byte)][lng_str (8 bytes)]`
+///
+/// The cache key encodes a language code and coordinates as ASCII bytes for efficient
+/// storage and hashing. Coordinates are stored as fixed-width 8-byte ASCII strings
+/// representing microdegrees with leading zeros if necessary.
+///
+/// # Layout (20 bytes total)
+/// - Bytes 0-1: Language code (e.g., "sk" = [115, 107])
+/// - Byte 2: Semicolon separator (';' = 59)
+/// - Bytes 3-10: Latitude in microdegrees as 8 ASCII digits
+/// - Byte 11: Semicolon separator (';' = 59)
+/// - Bytes 12-19: Longitude in microdegrees as 8 ASCII digits
+///
+/// # Example
+/// ```
+/// // "sk;48164582;17184710"
+/// // sk: language code
+/// // 48164582: latitude 48.164582° in microdegrees
+/// // 17184710: longitude 17.184710° in microdegrees (Bratislava coordinates)
+/// let key = geoverse::cache::CacheKeyRaw([
+///   115, 107, 59,  // "sk;"
+///   52, 56, 49, 54, 52, 53, 56, 50, 59,  // "48164582;"
+///   49, 55, 49, 56, 52, 55, 49, 48       // "17184710"
+/// ]);
+/// ```
 #[derive(Debug, Serialize, Hash, Eq, PartialEq)]
-struct CacheKeyRaw([u8; 20]);
+pub struct CacheKeyRaw(pub [u8; 20]);
 
 impl<'de> Deserialize<'de> for CacheKeyRaw {
   fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -82,7 +109,8 @@ impl CacheKey {
 
 impl Into<CacheKeyRaw> for CacheKey {
   fn into(self) -> CacheKeyRaw {
-    let s = format!("{};{};{}", self.lang, self.lat, self.lng);
+    let lang = convert_u16_to_lang(self.lang).unwrap();
+    let s = format!("{};{};{}", lang, self.lat, self.lng);
     let mut bytes = [0u8; 20];
     bytes.copy_from_slice(s.as_bytes());
     CacheKeyRaw(bytes)
@@ -295,17 +323,14 @@ mod tests {
 
   #[test]
   fn convert_geo_key_to_geo_key_raw() {
-    // let cache_key = CacheKey::try_new(48.1645819, 17.1847104, "sk").unwrap();
-    //
-    // let cache_key_raw: CacheKeyRaw = cache_key.into();
-    //
-    // println!("raw {:?}", cache_key_raw);
+    let cache_key = CacheKey::try_new(48.1645819, 17.1847104, "sk").unwrap();
+    let cache_key_raw: CacheKeyRaw = cache_key.into();
 
-    // assert_eq!(
-    //   [
-    //     101, 110, 59, 52, 56, 49, 54, 52, 53, 56, 49, 59, 49, 55, 49, 56, 52, 55, 49, 48
-    //   ],
-    //   cache_key_raw.0
-    // )
+    assert_eq!(
+      [
+        115, 107, 59, 52, 56, 49, 54, 52, 53, 56, 50, 59, 49, 55, 49, 56, 52, 55, 49, 48
+      ],
+      cache_key_raw.0
+    )
   }
 }

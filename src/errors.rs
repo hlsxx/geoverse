@@ -6,7 +6,9 @@ pub struct GeoCoordError {
 }
 
 #[derive(Debug)]
-pub struct CountryCodeError;
+pub struct CountryCodeError {
+  pub message: String,
+}
 
 impl Display for GeoCoordError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -16,7 +18,7 @@ impl Display for GeoCoordError {
 
 impl Display for CountryCodeError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "Invalid country code: must be exactly 2 characters")
+    write!(f, "{}", self.message)
   }
 }
 
@@ -34,7 +36,9 @@ macro_rules! throw_geo_coord_error {
 
 #[macro_export]
 macro_rules! throw_country_code_error {
-  () => {
-    return Err(Box::new(CountryCodeError) as Box<dyn std::error::Error>)
+  ($x:expr) => {
+    return Err(Box::new(CountryCodeError {
+      message: $x.to_string(),
+    }) as Box<dyn std::error::Error>)
   };
 }
