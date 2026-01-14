@@ -35,6 +35,6 @@ macro_rules! throw_geo_coord_error {
 #[macro_export]
 macro_rules! throw_country_code_error {
   () => {
-    return Err(Box::new(CountryCodeError) as Box<dyn Error>)
+    return Err(Box::new(CountryCodeError) as Box<dyn std::error::Error>)
   };
 }
