@@ -1,23 +1,74 @@
 #![allow(unused)]
 
-use std::error::Error;
+use std::{error::Error, io};
 
 use crate::{
   cache_config::GeoCacheConfig,
   cache_key::CacheKey,
-  storage::{Address, StorageStrategy},
+  storage::{Address, Storage, StorageFlushStrategy, StorageStrategy},
 };
 
 pub struct GeoCache<StorageStrategy> {
+  /// Configuration file
   config: GeoCacheConfig,
+
+  /// Storage strategy (dequeue, LRU)
   data: StorageStrategy,
+
+  /// Storage (file handler)
+  /// Optioned, used just for persistance disk operations
+  storage: Option<Storage>,
+
+  /// Counts added records
+  /// Used for flash into a persistance disk
+  record_counter: usize,
 }
 
 impl<S: StorageStrategy + Default> GeoCache<S> {
   pub fn new(config: GeoCacheConfig) -> Self {
+    // Tries to open a `storage file`.
+    let storage =
+      config
+        .storage_file_path
+        .as_ref()
+        .and_then(|file_path| match Storage::try_new(file_path) {
+          Ok(storage) => Some(storage),
+          Err(err) => {
+            println!("GeoCache storage error: {}", err);
+            None
+          }
+        });
+
     Self {
       config,
       data: S::default(),
+      storage,
+      record_counter: 0,
+    }
+  }
+
+  /// Flushs data into the persistance storage
+  fn flush_into_storage(&mut self) -> io::Result<()> {
+    if let Some(storage) = self.storage.as_mut() {
+      self.data.flush(storage);
+    } else {
+      println!("GeoCache storage error: Trying to flush into a disk but storage is not loaded");
+    }
+
+    Ok(())
+  }
+
+  fn should_flush(&self) -> bool {
+    match &self.config.storage_flush_strategy {
+      StorageFlushStrategy::Never => false,
+      StorageFlushStrategy::Immediately => true,
+      StorageFlushStrategy::RecordCount(count) => self.record_counter >= *count,
+    }
+  }
+
+  fn flush_if_needed(&mut self) {
+    if self.should_flush() {
+      self.flush_into_storage();
     }
   }
 
@@ -41,7 +92,11 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
   ) -> Result<(), Box<dyn Error>> {
     self
       .data
-      .insert(CacheKey::try_new(lat, lng, lang)?, address)
+      .insert(CacheKey::try_new(lat, lng, lang)?, address)?;
+
+    self.flush_if_needed();
+
+    Ok(())
   }
 
   /// Retrieves a decoded address from a key.
