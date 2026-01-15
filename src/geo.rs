@@ -1,8 +1,7 @@
 use std::error::Error;
 
 use crate::{
-  errors::CountryCodeError, errors::GeoCoordError, storage::Storage, throw_country_code_error,
-  throw_geo_coord_error,
+  errors::CountryCodeError, errors::GeoCoordError, throw_country_code_error, throw_geo_coord_error,
 };
 
 /// Multiplier to convert degrees to microdegrees (1 degree = 1,000,000 microdegrees)
@@ -24,7 +23,7 @@ const MICRODEGREES_PER_DEGREE: f64 = 1_000_000.0;
 /// # Examples
 /// ```
 /// // Bratislava coordinates: 48°08'38"NN, 17°06'35"E
-/// let (lat, lng) = geoverse::geo::convert_coords_into_microdeg(48.0838, 17.0635).unwrap();
+/// let (lat, lng) = geoverse::convert_coords_into_microdeg(48.0838, 17.0635).unwrap();
 /// assert_eq!(lat, 48083800);
 /// assert_eq!(lng, 17063500);
 /// ```
@@ -57,7 +56,7 @@ pub fn convert_coords_into_microdeg(lat: f64, lng: f64) -> Result<(i32, i32), Ge
 /// ```
 /// // "sk" -> bytes [115, 107] -> u16: 29547
 /// // 's' (115 = 0x73) in high byte, 'k' (107 = 0x6B) in low byte
-/// let code = geoverse::geo::convert_lang_to_u16("sk").unwrap();
+/// let code = geoverse::convert_lang_to_u16("sk").unwrap();
 /// assert_eq!(code, 0x736B); // or 29547 in decimal
 /// ```
 pub fn convert_lang_to_u16(lang: &str) -> Result<u16, Box<dyn Error>> {
@@ -85,8 +84,8 @@ pub fn convert_lang_to_u16(lang: &str) -> Result<u16, Box<dyn Error>> {
 ///
 /// # Examples
 /// ```
-/// let code = geoverse::geo::convert_lang_to_u16("sk").unwrap();
-/// let lang = geoverse::geo::convert_u16_to_lang(code).unwrap();
+/// let code = geoverse::convert_lang_to_u16("sk").unwrap();
+/// let lang = geoverse::convert_u16_to_lang(code).unwrap();
 /// assert_eq!(lang, "sk");
 /// ```
 pub fn convert_u16_to_lang(code: u16) -> Result<String, CountryCodeError> {

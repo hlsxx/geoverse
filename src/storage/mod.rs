@@ -1,9 +1,23 @@
-use std::{fs::File, io, path::Path};
+pub mod deque;
+pub mod lru;
 
-use crate::cache::CacheKeyRaw;
+use std::{error::Error, fs::File, io, path::Path};
+
+use crate::{
+  cache_config::GeoCacheConfig,
+  cache_key::{CacheKey, CacheKeyRaw},
+};
+
+pub type Address = String;
 
 pub struct Storage {
   file: File,
+}
+
+pub trait StorageStrategy {
+  fn insert(&mut self, cache_key: CacheKey, address: Address) -> Result<(), Box<dyn Error>>;
+  fn get(&self, cache_key: &CacheKey) -> Option<&Address>;
+  fn flush(&self) -> io::Result<()>;
 }
 
 impl Storage {
