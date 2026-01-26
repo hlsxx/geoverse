@@ -91,7 +91,8 @@ impl Storage {
   /// # Errors
   /// Returns and error if writing fails.
   pub fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
-    self.file.write_all(&bytes)
+    self.file.write_all(&bytes)?;
+    self.file.flush()
   }
 
   /// Truncates and writes a bytes into the `storage` file.
@@ -102,6 +103,6 @@ impl Storage {
   pub fn truncate_and_write(&mut self, bytes: &[u8]) -> io::Result<()> {
     self.file.set_len(0)?;
     self.file.seek(io::SeekFrom::Start(0))?;
-    self.file.write_all(&bytes)
+    self.write(bytes)
   }
 }
