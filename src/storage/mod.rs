@@ -4,7 +4,7 @@ pub mod lru;
 use std::{
   error::Error,
   fs::File,
-  io::{self, Write},
+  io::{self, Seek, Write},
   path::Path,
 };
 
@@ -13,6 +13,8 @@ use crate::{
   cache_key::{CacheKey, CacheKeyRaw},
 };
 
+// TODO: Convert to the new type
+// Check Address lenght (255 max)
 pub type Address = String;
 
 /// Storage flush strategy
@@ -72,6 +74,10 @@ impl Storage {
     Ok(Self { file })
   }
 
+  pub fn len(&self) -> io::Result<u64> {
+    Ok(self.file.metadata()?.len())
+  }
+
   /// Reads all the data from the `storage` file.
   ///
   /// # Errors
@@ -85,6 +91,17 @@ impl Storage {
   /// # Errors
   /// Returns and error if writing fails.
   pub fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
+    self.file.write_all(&bytes)
+  }
+
+  /// Truncates and writes a bytes into the `storage` file.
+  ///
+  /// # Errors
+  /// Returns and error if truncate fails.
+  /// Returns and error if writing fails.
+  pub fn truncate_and_write(&mut self, bytes: &[u8]) -> io::Result<()> {
+    self.file.set_len(0)?;
+    self.file.seek(io::SeekFrom::Start(0))?;
     self.file.write_all(&bytes)
   }
 }

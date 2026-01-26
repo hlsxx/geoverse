@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, ops::Deref};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -54,9 +54,15 @@ impl<'de> Deserialize<'de> for CacheKeyRaw {
   }
 }
 
-impl CacheKeyRaw {}
+impl Deref for CacheKeyRaw {
+  type Target = [u8];
 
-#[derive(PartialEq, Eq, Hash, Debug)]
+  fn deref(&self) -> &Self::Target {
+    &self.0
+  }
+}
+
+#[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub struct CacheKey {
   lat: i32,
   lng: i32,

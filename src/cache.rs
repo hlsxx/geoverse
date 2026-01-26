@@ -47,7 +47,7 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
     }
   }
 
-  /// Flushs data into the persistance storage
+  /// Flushes data into the persistance storage
   fn flush_into_storage(&mut self) -> io::Result<()> {
     if let Some(storage) = self.storage.as_mut() {
       self.data.flush(storage);
@@ -114,7 +114,7 @@ mod tests {
   use crate::{
     cache::GeoCache,
     cache_config::{GeoCacheConfig, GeoCacheConfigBuilder},
-    storage::deque::DequeStorage,
+    storage::deque::{DeqeueStorageItem, DequeStorage},
   };
 
   fn create_example_geo_cache_config() -> GeoCacheConfig {
@@ -125,19 +125,28 @@ mod tests {
     GeoCache::new(create_example_geo_cache_config())
   }
 
+  fn create_example_deque_geo_cache_with_storage_path() -> GeoCache<DequeStorage> {
+    GeoCache::new(
+      GeoCacheConfigBuilder::default()
+        .storage_file_path("test_path.bin")
+        .storage_flush_strategy(crate::StorageFlushStrategy::Immediately)
+        .build(),
+    )
+  }
+
   #[test]
   fn test_deque_cache_get() {
     let mut geo_cache = create_example_deque_geo_cache();
 
     geo_cache
       .insert(
-        (48.1645819, 17.1847104, "sk"),
+        (48.1645819, 17.1847104, "en"),
         "Bratislava, Slovakia".to_string(),
       )
       .unwrap();
 
     assert_eq!(
-      geo_cache.get((48.1645819, 17.1847104, "sk")).unwrap(),
+      geo_cache.get((48.1645819, 17.1847104, "en")).unwrap(),
       Some(&"Bratislava, Slovakia".to_string())
     )
   }
@@ -148,11 +157,36 @@ mod tests {
 
     geo_cache
       .insert(
-        (48.1645819, 17.1847104, "sk"),
+        (48.1645819, 17.1847104, "en"),
         "Bratislava, Slovakia".to_string(),
       )
       .unwrap();
 
-    assert_eq!(geo_cache.get((88.1645819, 17.1847104, "sk")).unwrap(), None)
+    assert_eq!(geo_cache.get((88.1645819, 17.1847104, "en")).unwrap(), None)
+  }
+
+  #[test]
+  fn test_deque_cache_get_file_size() {
+    let mut geo_cache = create_example_deque_geo_cache_with_storage_path();
+
+    let bratislava_address = "Bratislava, Slovakia".to_string();
+    let prague_address = "Prague, Czechia".to_string();
+
+    let (b_len, p_len) = (bratislava_address.len(), prague_address.len());
+
+    geo_cache
+      .insert((48.1645819, 17.1847104, "en"), bratislava_address)
+      .unwrap();
+
+    geo_cache
+      .insert((50.073658, 14.418540, "en"), prague_address)
+      .unwrap();
+
+    let storage = geo_cache.storage.as_ref().unwrap();
+
+    assert_eq!(
+      storage.len().unwrap(),
+      (DeqeueStorageItem::key_len() * 2 + p_len + b_len) as u64
+    )
   }
 }
