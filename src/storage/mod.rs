@@ -57,6 +57,9 @@ pub trait StorageStrategy {
 
 pub struct Storage {
   file: File,
+
+  /// Indicates whether data has been modified since the last sync to disk
+  is_dirty: bool,
 }
 
 impl Storage {
@@ -71,7 +74,10 @@ impl Storage {
       .create(true)
       .open(path)?;
 
-    Ok(Self { file })
+    Ok(Self {
+      file,
+      is_dirty: false,
+    })
   }
 
   pub fn len(&self) -> io::Result<u64> {
@@ -91,8 +97,8 @@ impl Storage {
   /// # Errors
   /// Returns and error if writing fails.
   pub fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
-    self.file.write_all(&bytes)?;
-    self.file.flush()
+    self.is_dirty = true;
+    self.file.write_all(&bytes)
   }
 
   /// Truncates and writes a bytes into the `storage` file.
@@ -104,5 +110,23 @@ impl Storage {
     self.file.set_len(0)?;
     self.file.seek(io::SeekFrom::Start(0))?;
     self.write(bytes)
+  }
+
+  /// Flushes data to persistent storage.
+  ///
+  /// Only performs the flush if data has been modified since the last sync.
+  pub fn sync(&mut self) -> io::Result<()> {
+    if self.is_dirty {
+      self.file.flush()?;
+      self.is_dirty = false;
+    }
+
+    Ok(())
+  }
+}
+
+impl Drop for Storage {
+  fn drop(&mut self) {
+    let _ = self.sync();
   }
 }
