@@ -5,11 +5,16 @@ use crate::{
   storage::{Address, Storage, StorageStrategy},
 };
 
+/// DequeStorage is a simple persistence storage technique
+/// which consits of a `data` field and a `cache_keys` field.
+///
+/// Field `cache_keys` is essential for rememberering the insertion
+/// order of each `CacheKey` - the oldest inserted key sits at
+/// the back of the `VecDeque`.
 pub struct DequeStorage {
-  /// In-memory data
+  /// Maps each `CacheKey` to its corresponding `Address` in memory
   data: HashMap<CacheKey, Address>,
-
-  /// Keys insertion order
+  /// Tracks insertion order of keys (oldest at the back)
   cache_keys: VecDeque<CacheKey>,
 }
 
@@ -37,6 +42,12 @@ impl StorageStrategy for DequeStorage {
         DeqeueStorageItem::from_cache_key(&cache_key, address).to_bytes()
       })
       .collect::<Vec<u8>>()
+  }
+
+  fn read(&mut self, storage: &mut Storage) -> std::io::Result<()> {
+    // TODO: parse from binary file
+    // println!("{:?}", data);
+    Ok(())
   }
 
   fn flush(&self, storage: &mut Storage) -> std::io::Result<()> {
@@ -103,7 +114,50 @@ impl DeqeueStorageItem {
 
 #[cfg(test)]
 mod tests {
-  use crate::{DequeStorage, cache_key::CacheKey, storage::StorageStrategy};
+  use crate::{
+    DequeStorage,
+    cache_key::CacheKey,
+    storage::{Storage, StorageStrategy},
+  };
+
+  fn create_test_storage() -> Storage {
+    let path = format!("/tmp/geocache_test_{}.bin", rand::random::<u64>());
+    Storage::try_new(&path).unwrap()
+  }
+
+  #[test]
+  fn deque_read() {
+    let mut deque_storage = DequeStorage::default();
+    let mut storage = create_test_storage();
+
+    deque_storage
+      .insert(
+        CacheKey::try_new(48.1645819, 17.1847104, "en").unwrap(),
+        "Bratislava, Slovakia".to_string(),
+      )
+      .unwrap();
+
+    deque_storage
+      .insert(
+        CacheKey::try_new(50.073658, 14.418540, "en").unwrap(),
+        "Prague, Czechia".to_string(),
+      )
+      .unwrap();
+
+    assert_eq!(deque_storage.cache_keys.len(), 2);
+    assert_eq!(deque_storage.data.len(), 2);
+
+    deque_storage.flush(&mut storage).unwrap();
+
+    drop(deque_storage);
+
+    // Create a new instance
+    let mut deque_storage = DequeStorage::default();
+    deque_storage.read(&mut storage).unwrap();
+
+    assert_eq!(deque_storage.cache_keys.len(), 2);
+    assert_eq!(deque_storage.data.len(), 2);
+  }
 
   #[test]
   fn deque_insertion() {

@@ -4,7 +4,7 @@ pub mod lru;
 use std::{
   error::Error,
   fs::File,
-  io::{self, Seek, Write},
+  io::{self, Read, Seek, Write},
   path::Path,
 };
 
@@ -17,48 +17,51 @@ use crate::{
 // Check Address lenght (255 max)
 pub type Address = String;
 
-/// Storage flush strategy
-///
-/// Defines how often flush to the presistance disk
+/// Defines how often to flush data to the persistence disk.
 #[derive(PartialEq, Eq)]
 pub enum StorageFlushStrategy {
-  /// Use just in-memory data
+  /// Keep data in-memory only, never flush to disk.
   Never,
-
-  /// Flush after every write operation
+  /// Flush to disk after every write operation.
   Immediately,
-
-  /// Flush after specific record count
+  /// Flush to disk after a specific number of records have been written.
   RecordCount(usize),
 }
 
 impl Default for StorageFlushStrategy {
   fn default() -> Self {
     Self::Never
-    // // After new 30 records added flush to the persistance disk
+    // // After new 30 records added flush to the persistence disk
     // Self::RecordCount(30)
   }
 }
 
-/// Storage strategy for caching operations and persistance operations
+/// Defines the interface for persistence storage mechanism used by cache implementions.
 ///
-/// Defines the interface for persistent storage mechanisms used by cache implementations.
-/// e.g.: Deque, LRU strategy
+/// Implement this trait to provide a custom storage strategy, e.g., Deque or LRU.
 pub trait StorageStrategy {
+  /// Inserts a `cache_key` with its associated `address` into the storage.
+  ///
+  /// Returns an error if the insertion fails.
   fn insert(&mut self, cache_key: CacheKey, address: Address) -> Result<(), Box<dyn Error>>;
 
+  /// Retrieves the `Address` associated with the given `cache_key`, if it exists.
   fn get(&self, cache_key: &CacheKey) -> Option<&Address>;
 
+  /// Serializes the storage contents into raw bytes.
   fn as_bytes(&self) -> Vec<u8>;
 
-  /// Flush into the `storage file`
+  /// Reads data from the given `storage` file into a memory.
+  fn read(&mut self, storage: &mut Storage) -> io::Result<()>;
+
+  /// Flushes the current storage state into the given `storage` file.
   fn flush(&self, storage: &mut Storage) -> io::Result<()>;
 }
 
 pub struct Storage {
+  /// The underlying file used for persistent storage
   file: File,
-
-  /// Indicates whether data has been modified since the last sync to disk
+  /// Indicates whether data has been modified since the last flush to disk
   is_dirty: bool,
 }
 
@@ -88,8 +91,10 @@ impl Storage {
   ///
   /// # Errors
   /// Returns an error when reading fails.
-  pub fn read(&self) -> io::Result<Vec<u8>> {
-    !unimplemented!()
+  pub fn read(&mut self) -> io::Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    self.file.read_to_end(&mut buf)?;
+    Ok(buf)
   }
 
   /// Writes a bytes into the `storage` file.

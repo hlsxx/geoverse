@@ -3,13 +3,13 @@ use std::path::PathBuf;
 use crate::storage::StorageFlushStrategy;
 
 pub struct GeoCacheConfig {
-  /// Path to a persistance disk
+  /// Path to a persistence disk
   pub storage_file_path: Option<PathBuf>,
 
   /// Limit memory max usage (MB)
   pub memory_max_size: usize,
 
-  /// Limit persistance disk usage (MB)
+  /// Limit persistence disk usage (MB)
   pub disk_max_size: usize,
 
   /// Storage flush strategy

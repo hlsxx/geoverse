@@ -8,19 +8,14 @@ use crate::{
   storage::{Address, Storage, StorageFlushStrategy, StorageStrategy},
 };
 
-pub struct GeoCache<StorageStrategy> {
-  /// Configuration file
+pub struct GeoCache<S: StorageStrategy> {
+  /// Cache configuration
   config: GeoCacheConfig,
-
-  /// Storage strategy (dequeue, LRU)
-  data: StorageStrategy,
-
-  /// Storage (file handler)
-  /// Optioned, used just for persistance disk operations
+  /// The active storage strategy (e.g., Deque, LRU)
+  strategy: S,
+  /// Underlying file storage, present only when persistence is enabled
   storage: Option<Storage>,
-
-  /// Counts added records
-  /// Used for flash into a persistance disk
+  /// Tracks the number of inserted records since the last flush
   record_counter: usize,
 }
 
@@ -41,16 +36,16 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
 
     Self {
       config,
-      data: S::default(),
+      strategy: S::default(),
       storage,
       record_counter: 0,
     }
   }
 
-  /// Flushes data into the persistance storage
+  /// Flushes data into the persistence storage
   fn flush_into_storage(&mut self) -> io::Result<()> {
     if let Some(storage) = self.storage.as_mut() {
-      self.data.flush(storage);
+      self.strategy.flush(storage);
     } else {
       println!("GeoCache storage error: Trying to flush into a disk but storage is not loaded");
     }
@@ -91,7 +86,7 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
     address: Address,
   ) -> Result<(), Box<dyn Error>> {
     self
-      .data
+      .strategy
       .insert(CacheKey::try_new(lat, lng, lang)?, address)?;
 
     self.flush_if_needed();
@@ -105,7 +100,7 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
     &self,
     (lat, lng, lang): (f64, f64, &str),
   ) -> Result<Option<&Address>, Box<dyn Error>> {
-    Ok(self.data.get(&CacheKey::try_new(lat, lng, lang)?))
+    Ok(self.strategy.get(&CacheKey::try_new(lat, lng, lang)?))
   }
 }
 
