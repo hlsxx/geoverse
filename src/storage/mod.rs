@@ -93,6 +93,7 @@ impl Storage {
   /// Returns an error when reading fails.
   pub fn read(&mut self) -> io::Result<Vec<u8>> {
     let mut buf = Vec::new();
+    self.file.seek(io::SeekFrom::Start(0))?;
     self.file.read_to_end(&mut buf)?;
     Ok(buf)
   }

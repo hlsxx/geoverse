@@ -45,13 +45,34 @@ impl StorageStrategy for DequeStorage {
   }
 
   fn read(&mut self, storage: &mut Storage) -> std::io::Result<()> {
-    // TODO: parse from binary file
-    // println!("{:?}", data);
+    let bytes = storage.read()?;
+    let mut pos = 0;
+
+    // Get storage item len - address len
+    const STORAGE_ITEM_LEN: usize = DeqeueStorageItem::key_len() - 1;
+
+    while pos + STORAGE_ITEM_LEN <= bytes.len() {
+      let key_bytes: [u8; STORAGE_ITEM_LEN] =
+        bytes[pos..pos + STORAGE_ITEM_LEN].try_into().unwrap();
+      let cache_key_raw = CacheKeyRaw(key_bytes);
+      pos += STORAGE_ITEM_LEN;
+
+      let addr_len = bytes[pos] as usize;
+      pos += 1;
+
+      let address = String::from_utf8_lossy(&bytes[pos..pos + addr_len]);
+      pos += addr_len;
+
+      let cache_key: CacheKey = cache_key_raw.into();
+
+      self.data.insert(cache_key.clone(), address.to_string());
+      self.cache_keys.push_front(cache_key);
+    }
+
     Ok(())
   }
 
   fn flush(&self, storage: &mut Storage) -> std::io::Result<()> {
-    println!("{:?}", self.as_bytes());
     storage.truncate_and_write(&self.as_bytes())
   }
 }
@@ -114,21 +135,24 @@ impl DeqeueStorageItem {
 
 #[cfg(test)]
 mod tests {
+  use tempfile::NamedTempFile;
+
   use crate::{
     DequeStorage,
     cache_key::CacheKey,
     storage::{Storage, StorageStrategy},
   };
 
-  fn create_test_storage() -> Storage {
-    let path = format!("/tmp/geocache_test_{}.bin", rand::random::<u64>());
-    Storage::try_new(&path).unwrap()
+  fn create_test_storage() -> (Storage, NamedTempFile) {
+    let tmp = NamedTempFile::new().unwrap();
+    let storage = Storage::try_new(tmp.path()).unwrap();
+    (storage, tmp)
   }
 
   #[test]
   fn deque_read() {
     let mut deque_storage = DequeStorage::default();
-    let mut storage = create_test_storage();
+    let (mut storage, _tmp) = create_test_storage();
 
     deque_storage
       .insert(

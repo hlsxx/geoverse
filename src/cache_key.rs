@@ -1,4 +1,4 @@
-use std::{error::Error, ops::Deref};
+use std::{array::TryFromSliceError, error::Error, ops::Deref};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -101,11 +101,36 @@ impl CacheKey {
   }
 }
 
-impl Into<CacheKeyRaw> for CacheKey {
-  fn into(self) -> CacheKeyRaw {
-    let lang = convert_u16_to_lang(self.lang).unwrap();
-    let s = format!("{};{};{}", lang, self.lat, self.lng);
+impl TryFrom<&[u8]> for CacheKeyRaw {
+  type Error = TryFromSliceError;
+
+  fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+    Ok(CacheKeyRaw(value.try_into()?))
+  }
+}
+
+impl From<CacheKeyRaw> for CacheKey {
+  fn from(value: CacheKeyRaw) -> Self {
+    let lang = std::str::from_utf8(&value[0..2]).unwrap();
+    let lat: i32 = std::str::from_utf8(&value[3..11]).unwrap().parse().unwrap();
+    let lng: i32 = std::str::from_utf8(&value[12..20])
+      .unwrap()
+      .parse()
+      .unwrap();
+
+    CacheKey {
+      lat,
+      lng,
+      lang: convert_lang_to_u16(lang).unwrap(),
+    }
+  }
+}
+
+impl From<CacheKey> for CacheKeyRaw {
+  fn from(value: CacheKey) -> CacheKeyRaw {
     let mut bytes = [0u8; 20];
+    let lang = convert_u16_to_lang(value.lang).unwrap();
+    let s = format!("{};{:08};{:08}", lang, value.lat, value.lng);
     bytes.copy_from_slice(s.as_bytes());
     CacheKeyRaw(bytes)
   }
