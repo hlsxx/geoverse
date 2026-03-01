@@ -21,7 +21,6 @@ pub struct GeoCache<S: StorageStrategy> {
 
 impl<S: StorageStrategy + Default> GeoCache<S> {
   pub fn new(config: GeoCacheConfig) -> Self {
-    // Tries to open a `storage file`.
     let storage =
       config
         .storage_file_path
@@ -40,6 +39,15 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
       storage,
       record_counter: 0,
     }
+  }
+
+  #[must_use]
+  pub fn init(&mut self) -> io::Result<()> {
+    if let Some(storage) = &mut self.storage {
+      self.strategy.read(storage);
+    }
+
+    Ok(())
   }
 
   /// Flushes data into the persistence storage
@@ -66,17 +74,6 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
       self.flush_into_storage();
     }
   }
-
-  // pub fn init(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-  //   let file = File::open(&self.config.file_path)?;
-  //   let json: HashMap<CacheKeyRaw, Address> = serde_json::from_reader(file)?;
-  //
-  //   println!("{:?}", json);
-  //
-  //   Ok(())
-  //
-  //   // let file = File::open(path)
-  // }
 
   /// Inserts a new key into `GeoCache` data.
   /// The key consists of `(latitude, longitude, language_code)`.
@@ -106,6 +103,8 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
 
 #[cfg(test)]
 mod tests {
+  use tempfile::NamedTempFile;
+
   use crate::{
     cache::GeoCache,
     cache_config::{GeoCacheConfig, GeoCacheConfigBuilder},
@@ -120,13 +119,46 @@ mod tests {
     GeoCache::new(create_example_geo_cache_config())
   }
 
-  fn create_example_deque_geo_cache_with_storage_path() -> GeoCache<DequeStorage> {
-    GeoCache::new(
+  fn create_example_deque_geo_cache_with_storage_path(
+    tmp: Option<NamedTempFile>,
+  ) -> (GeoCache<DequeStorage>, NamedTempFile) {
+    let tmp = tmp.unwrap_or_else(|| NamedTempFile::new().unwrap());
+
+    let mut geo_cache = GeoCache::new(
       GeoCacheConfigBuilder::default()
-        .storage_file_path("test_path.bin")
+        .storage_file_path(tmp.path())
         .storage_flush_strategy(crate::StorageFlushStrategy::Immediately)
         .build(),
-    )
+    );
+
+    geo_cache.init();
+    (geo_cache, tmp)
+  }
+
+  #[test]
+  fn test_deque_cache_insert() {
+    let (mut geo_cache, tmp) = create_example_deque_geo_cache_with_storage_path(None);
+
+    geo_cache
+      .insert(
+        (48.1645819, 17.1847104, "en"),
+        "Bratislava, Slovakia".to_string(),
+      )
+      .unwrap();
+
+    assert_eq!(
+      geo_cache.get((48.1645819, 17.1847104, "en")).unwrap(),
+      Some(&"Bratislava, Slovakia".to_string())
+    );
+
+    drop(geo_cache);
+
+    let (mut geo_cache, tmp) = create_example_deque_geo_cache_with_storage_path(Some(tmp));
+
+    assert_eq!(
+      geo_cache.get((48.1645819, 17.1847104, "en")).unwrap(),
+      Some(&"Bratislava, Slovakia".to_string())
+    );
   }
 
   #[test]
@@ -162,7 +194,7 @@ mod tests {
 
   #[test]
   fn test_deque_cache_get_file_size() {
-    let mut geo_cache = create_example_deque_geo_cache_with_storage_path();
+    let (mut geo_cache, tmp) = create_example_deque_geo_cache_with_storage_path(None);
 
     let bratislava_address = "Bratislava, Slovakia".to_string();
     let prague_address = "Prague, Czechia".to_string();
