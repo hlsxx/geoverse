@@ -41,7 +41,7 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
     }
   }
 
-  #[must_use]
+  #[must_use = "use for persistence disk initialization"]
   pub fn init(&mut self) -> io::Result<()> {
     if let Some(storage) = &mut self.storage {
       self.strategy.read(storage);

@@ -19,6 +19,8 @@ pub struct DequeStorage {
 }
 
 impl StorageStrategy for DequeStorage {
+  const ON_DELETE_ITEMS_COUNT: usize = 10;
+
   fn insert(
     &mut self,
     cache_key: CacheKey,
@@ -38,8 +40,8 @@ impl StorageStrategy for DequeStorage {
       .cache_keys
       .iter()
       .flat_map(|cache_key| {
-        let address = self.data.get(&cache_key).unwrap();
-        DeqeueStorageItem::from_cache_key(&cache_key, address).to_bytes()
+        let address = self.data.get(cache_key).unwrap();
+        DeqeueStorageItem::from_cache_key(cache_key, address).to_bytes()
       })
       .collect::<Vec<u8>>()
   }
@@ -74,6 +76,19 @@ impl StorageStrategy for DequeStorage {
 
   fn flush(&self, storage: &mut Storage) -> std::io::Result<()> {
     storage.truncate_and_write(&self.as_bytes())
+  }
+
+  fn delete(&mut self, storage: &mut Storage) -> std::io::Result<()> {
+    self.cache_keys.truncate(
+      self
+        .cache_keys
+        .len()
+        .saturating_sub(Self::ON_DELETE_ITEMS_COUNT),
+    );
+
+    self.data.retain(|key, _| self.cache_keys.contains(key));
+
+    Ok(())
   }
 }
 
@@ -116,7 +131,7 @@ impl DeqeueStorageItem {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&self.cache_key_raw);
     bytes.extend_from_slice(&self.address_len.to_be_bytes());
-    bytes.extend_from_slice(&self.address.as_bytes());
+    bytes.extend_from_slice(self.address.as_bytes());
     bytes
   }
 
@@ -203,5 +218,30 @@ mod tests {
 
     assert_eq!(deque_storage.cache_keys.len(), 2);
     assert_eq!(deque_storage.data.len(), 2);
+  }
+
+  #[test]
+  fn deque_deletion() {
+    let mut deque_storage = DequeStorage::default();
+    let (mut storage, _tmp) = create_test_storage();
+
+    // Mock the data
+    for i in 0..30 {
+      deque_storage
+        .insert(
+          CacheKey::try_new(48.1645819 + i as f64, 17.1847104 + i as f64, "en").unwrap(),
+          format!("unknown-location-{i}"),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(deque_storage.cache_keys.len(), 30);
+    assert_eq!(deque_storage.data.len(), 30);
+
+    deque_storage.flush(&mut storage).unwrap();
+    deque_storage.delete(&mut storage).unwrap();
+
+    assert_eq!(deque_storage.cache_keys.len(), 20);
+    assert_eq!(deque_storage.data.len(), 20);
   }
 }

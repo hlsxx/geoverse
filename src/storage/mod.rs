@@ -8,19 +8,17 @@ use std::{
   path::Path,
 };
 
-use crate::{
-  cache_config::GeoCacheConfig,
-  cache_key::{CacheKey, CacheKeyRaw},
-};
+use crate::cache_key::CacheKey;
 
 // TODO: Convert to the new type
 // Check Address lenght (255 max)
 pub type Address = String;
 
 /// Defines how often to flush data to the persistence disk.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Default)]
 pub enum StorageFlushStrategy {
   /// Keep data in-memory only, never flush to disk.
+  #[default]
   Never,
   /// Flush to disk after every write operation.
   Immediately,
@@ -28,18 +26,13 @@ pub enum StorageFlushStrategy {
   RecordCount(usize),
 }
 
-impl Default for StorageFlushStrategy {
-  fn default() -> Self {
-    Self::Never
-    // // After new 30 records added flush to the persistence disk
-    // Self::RecordCount(30)
-  }
-}
-
 /// Defines the interface for persistence storage mechanism used by cache implementions.
 ///
 /// Implement this trait to provide a custom storage strategy, e.g., Deque or LRU.
 pub trait StorageStrategy {
+  // Defines how many items will dropped at delete call
+  const ON_DELETE_ITEMS_COUNT: usize;
+
   /// Inserts a `cache_key` with its associated `address` into the storage.
   ///
   /// Returns an error if the insertion fails.
@@ -56,6 +49,9 @@ pub trait StorageStrategy {
 
   /// Flushes the current storage state into the given `storage` file.
   fn flush(&self, storage: &mut Storage) -> io::Result<()>;
+
+  /// Deletes a record with specific conditions
+  fn delete(&mut self, storage: &mut Storage) -> io::Result<()>;
 }
 
 pub struct Storage {
@@ -104,7 +100,7 @@ impl Storage {
   /// Returns and error if writing fails.
   pub fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
     self.is_dirty = true;
-    self.file.write_all(&bytes)
+    self.file.write_all(bytes)
   }
 
   /// Truncates and writes a bytes into the `storage` file.
