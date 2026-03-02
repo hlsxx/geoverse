@@ -75,6 +75,16 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
     }
   }
 
+  /// In a case when a new record data overflow limited memory max size
+  /// delete oldest record by the provided strategy.
+  fn evict_if_needed(&mut self, address_len: usize) -> io::Result<()> {
+    if let Some(storage) = &mut self.storage {
+      self.strategy.evict_if_needed(storage, address_len)?;
+    }
+
+    Ok(())
+  }
+
   /// Inserts a new key into `GeoCache` data.
   /// The key consists of `(latitude, longitude, language_code)`.
   pub fn insert(
@@ -82,10 +92,10 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
     (lat, lng, lang): (f64, f64, &str),
     address: Address,
   ) -> Result<(), Box<dyn Error>> {
-    self
-      .strategy
-      .insert(CacheKey::try_new(lat, lng, lang)?, address)?;
+    let cache_key = CacheKey::try_new(lat, lng, lang)?;
 
+    self.evict_if_needed(address.len())?;
+    self.strategy.insert(cache_key, address)?;
     self.flush_if_needed();
 
     Ok(())
@@ -213,7 +223,7 @@ mod tests {
 
     assert_eq!(
       storage.len().unwrap(),
-      (DeqeueStorageItem::key_len() * 2 + p_len + b_len) as u64
+      (DeqeueStorageItem::len() * 2 + p_len + b_len) as u64
     )
   }
 }

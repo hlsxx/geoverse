@@ -9,9 +9,6 @@ pub struct GeoCacheConfig {
   /// Limit memory max usage (MB)
   pub memory_max_size: usize,
 
-  /// Limit persistence disk usage (MB)
-  pub disk_max_size: usize,
-
   /// Storage flush strategy
   pub storage_flush_strategy: StorageFlushStrategy,
 }
@@ -20,8 +17,7 @@ impl Default for GeoCacheConfig {
   fn default() -> Self {
     Self {
       storage_file_path: None,
-      memory_max_size: 100 * 1024 * 1024, // 100MB,
-      disk_max_size: 1024 * 1024 * 1024,  // 1GB,
+      memory_max_size: 10 * 1024 * 1024, // 10MB,
       storage_flush_strategy: StorageFlushStrategy::default(),
     }
   }
@@ -38,8 +34,6 @@ pub struct GeoCacheConfigBuilder {
   storage_file_path: Option<PathBuf>,
 
   memory_max_size: Option<usize>,
-
-  disk_max_size: Option<usize>,
 
   storage_flush_strategy: Option<StorageFlushStrategy>,
 }
@@ -60,11 +54,6 @@ impl GeoCacheConfigBuilder {
     self
   }
 
-  pub fn disk_max_size(mut self, size: usize) -> Self {
-    self.disk_max_size = Some(size);
-    self
-  }
-
   pub fn build(self) -> GeoCacheConfig {
     let default = GeoCacheConfig::default();
 
@@ -74,7 +63,6 @@ impl GeoCacheConfigBuilder {
         .storage_flush_strategy
         .unwrap_or(default.storage_flush_strategy),
       memory_max_size: self.memory_max_size.unwrap_or(default.memory_max_size),
-      disk_max_size: self.disk_max_size.unwrap_or(default.disk_max_size),
     }
   }
 }
@@ -90,11 +78,9 @@ mod tests {
     let geocache_builder = GeoCacheConfig::builder()
       .storage_file_path("./geoverse_db.bin")
       .memory_max_size(555)
-      .disk_max_size(333)
       .build();
 
     assert_eq!(geocache_builder.memory_max_size, 555);
-    assert_eq!(geocache_builder.disk_max_size, 333);
     assert_eq!(
       geocache_builder.storage_file_path,
       Some(PathBuf::from("./geoverse_db.bin"))

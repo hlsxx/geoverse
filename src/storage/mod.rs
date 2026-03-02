@@ -41,6 +41,9 @@ pub trait StorageStrategy {
   /// Retrieves the `Address` associated with the given `cache_key`, if it exists.
   fn get(&self, cache_key: &CacheKey) -> Option<&Address>;
 
+  /// Returns current in a memory usage size
+  fn get_in_memory_size(&self) -> usize;
+
   /// Serializes the storage contents into raw bytes.
   fn as_bytes(&self) -> Vec<u8>;
 
@@ -50,8 +53,11 @@ pub trait StorageStrategy {
   /// Flushes the current storage state into the given `storage` file.
   fn flush(&self, storage: &mut Storage) -> io::Result<()>;
 
-  /// Deletes a record with specific conditions
-  fn delete(&mut self, storage: &mut Storage) -> io::Result<()>;
+  /// Evicts records with specific conditions
+  fn evict_if_needed(&mut self, storage: &mut Storage, address_len: usize) -> io::Result<()>;
+
+  /// Evicts from a memory or perstistance disk
+  fn evict(&mut self, storage: &mut Storage) -> io::Result<()>;
 }
 
 pub struct Storage {
@@ -71,6 +77,7 @@ impl Storage {
       .read(true)
       .write(true)
       .create(true)
+      .truncate(false)
       .open(path)?;
 
     Ok(Self {

@@ -11,11 +11,14 @@ use crate::{
 /// Field `cache_keys` is essential for rememberering the insertion
 /// order of each `CacheKey` - the oldest inserted key sits at
 /// the back of the `VecDeque`.
+#[derive(Default)]
 pub struct DequeStorage {
   /// Maps each `CacheKey` to its corresponding `Address` in memory
   data: HashMap<CacheKey, Address>,
   /// Tracks insertion order of keys (oldest at the back)
   cache_keys: VecDeque<CacheKey>,
+  /// Current total memory usage in bytes
+  memory_size: usize,
 }
 
 impl StorageStrategy for DequeStorage {
@@ -26,13 +29,18 @@ impl StorageStrategy for DequeStorage {
     cache_key: CacheKey,
     address: Address,
   ) -> Result<(), Box<dyn std::error::Error>> {
+    self.increment_size(address.len());
     self.insert_key(cache_key.clone());
     self.data.insert(cache_key, address);
     Ok(())
   }
 
   fn get(&self, cache_key: &CacheKey) -> Option<&Address> {
-    self.data.get(&cache_key)
+    self.data.get(cache_key)
+  }
+
+  fn get_in_memory_size(&self) -> usize {
+    self.memory_size
   }
 
   fn as_bytes(&self) -> Vec<u8> {
@@ -51,7 +59,7 @@ impl StorageStrategy for DequeStorage {
     let mut pos = 0;
 
     // Get storage item len - address len
-    const STORAGE_ITEM_LEN: usize = DeqeueStorageItem::key_len() - 1;
+    const STORAGE_ITEM_LEN: usize = DeqeueStorageItem::len() - 1;
 
     while pos + STORAGE_ITEM_LEN <= bytes.len() {
       let key_bytes: [u8; STORAGE_ITEM_LEN] =
@@ -69,6 +77,7 @@ impl StorageStrategy for DequeStorage {
 
       self.data.insert(cache_key.clone(), address.to_string());
       self.cache_keys.push_front(cache_key);
+      self.increment_size(address.len());
     }
 
     Ok(())
@@ -78,7 +87,15 @@ impl StorageStrategy for DequeStorage {
     storage.truncate_and_write(&self.as_bytes())
   }
 
-  fn delete(&mut self, storage: &mut Storage) -> std::io::Result<()> {
+  fn evict_if_needed(&mut self, storage: &mut Storage, address_len: usize) -> std::io::Result<()> {
+    if DeqeueStorageItem::len() + address_len > self.memory_size {
+      self.evict(storage)?;
+    }
+
+    Ok(())
+  }
+
+  fn evict(&mut self, storage: &mut Storage) -> std::io::Result<()> {
     self.cache_keys.truncate(
       self
         .cache_keys
@@ -88,22 +105,47 @@ impl StorageStrategy for DequeStorage {
 
     self.data.retain(|key, _| self.cache_keys.contains(key));
 
-    Ok(())
-  }
-}
+    self.flush(storage)?;
 
-impl Default for DequeStorage {
-  fn default() -> Self {
-    Self {
-      data: HashMap::new(),
-      cache_keys: VecDeque::new(),
-    }
+    // Size equals persistance disk size
+    self.memory_size = storage.len()? as usize;
+
+    Ok(())
   }
 }
 
 impl DequeStorage {
   fn insert_key(&mut self, cache_key: CacheKey) {
     self.cache_keys.push_front(cache_key.clone());
+  }
+
+  /// Increments in a memory size or persistance disk size
+  fn increment_size(&mut self, address_len: usize) {
+    self.memory_size += DeqeueStorageItem::len() + address_len;
+  }
+
+  /// Returns a first record
+  #[allow(unused)]
+  fn first(&self) -> Option<(&CacheKey, &Address)> {
+    if let Some(cache_key) = self.cache_keys.front()
+      && let Some(address) = self.data.get(cache_key)
+    {
+      return Some((cache_key, address));
+    }
+
+    None
+  }
+
+  /// Returns a last record
+  #[allow(unused)]
+  fn last(&self) -> Option<(&CacheKey, &Address)> {
+    if let Some(cache_key) = self.cache_keys.back()
+      && let Some(address) = self.data.get(cache_key)
+    {
+      return Some((cache_key, address));
+    }
+
+    None
   }
 }
 
@@ -138,7 +180,7 @@ impl DeqeueStorageItem {
   #[allow(unused)]
   /// Size in a binary file.
   /// 2 (lang) + 2 * 8 (2 * lat/lng) + 2 (2 * ;) + 1 (size of the address [limited to 255])
-  pub const fn key_len() -> usize {
+  pub const fn len() -> usize {
     const LANG_SIZE: usize = 2;
     const COORD_SIZE: usize = 8;
     const SEPARATOR_SIZE: usize = 1;
@@ -155,8 +197,12 @@ mod tests {
   use crate::{
     DequeStorage,
     cache_key::CacheKey,
-    storage::{Storage, StorageStrategy},
+    storage::{Storage, StorageStrategy, deque::DeqeueStorageItem},
   };
+
+  const SIZE: usize = 30;
+  // unknown-00
+  const ADDRESS_LEN: usize = 10;
 
   fn create_test_storage() -> (Storage, NamedTempFile) {
     let tmp = NamedTempFile::new().unwrap();
@@ -226,11 +272,11 @@ mod tests {
     let (mut storage, _tmp) = create_test_storage();
 
     // Mock the data
-    for i in 0..30 {
+    for i in 1..=30 {
       deque_storage
         .insert(
           CacheKey::try_new(48.1645819 + i as f64, 17.1847104 + i as f64, "en").unwrap(),
-          format!("unknown-location-{i}"),
+          format!("unknown-{:02}", i),
         )
         .unwrap();
     }
@@ -239,9 +285,66 @@ mod tests {
     assert_eq!(deque_storage.data.len(), 30);
 
     deque_storage.flush(&mut storage).unwrap();
-    deque_storage.delete(&mut storage).unwrap();
+    deque_storage.evict(&mut storage).unwrap();
 
     assert_eq!(deque_storage.cache_keys.len(), 20);
     assert_eq!(deque_storage.data.len(), 20);
+
+    let first_record = deque_storage.first().unwrap();
+    let last_record = deque_storage.last().unwrap();
+
+    assert_eq!(first_record.1, "unknown-30");
+    assert_eq!(last_record.1, "unknown-11");
+  }
+
+  #[test]
+  fn deque_memory_size() {
+    let mut deque_storage = DequeStorage::default();
+
+    for i in 0..SIZE {
+      deque_storage
+        .insert(
+          CacheKey::try_new(48.1645819 + i as f64, 17.1847104 + i as f64, "en").unwrap(),
+          format!("unknown-{:02}", i),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(
+      deque_storage.get_in_memory_size(),
+      DeqeueStorageItem::len() * SIZE + ADDRESS_LEN * SIZE
+    );
+  }
+
+  #[test]
+  fn deque_memory_size_with_eviction() {
+    let mut deque_storage = DequeStorage::default();
+    let (mut storage, _tmp) = create_test_storage();
+
+    // Mock the data
+    for i in 0..SIZE {
+      deque_storage
+        .insert(
+          CacheKey::try_new(48.1645819 + i as f64, 17.1847104 + i as f64, "en").unwrap(),
+          format!("unknown-{:02}", i),
+        )
+        .unwrap();
+    }
+
+    const MEMORY_SIZE: usize = DeqeueStorageItem::len() * SIZE + ADDRESS_LEN * SIZE;
+
+    const MEMORY_SIZE_OF_DELETED_RECORDS: usize = DeqeueStorageItem::len()
+      * DequeStorage::ON_DELETE_ITEMS_COUNT
+      + ADDRESS_LEN * DequeStorage::ON_DELETE_ITEMS_COUNT;
+
+    assert_eq!(deque_storage.get_in_memory_size(), MEMORY_SIZE);
+
+    deque_storage.flush(&mut storage).unwrap();
+    deque_storage.evict(&mut storage).unwrap();
+
+    assert_eq!(
+      deque_storage.get_in_memory_size(),
+      MEMORY_SIZE - MEMORY_SIZE_OF_DELETED_RECORDS
+    );
   }
 }
