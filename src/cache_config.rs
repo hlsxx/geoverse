@@ -5,10 +5,8 @@ use crate::storage::StorageFlushStrategy;
 pub struct GeoCacheConfig {
   /// Path to a persistence disk
   pub storage_file_path: Option<PathBuf>,
-
   /// Limit memory max usage (MB)
   pub memory_max_size: usize,
-
   /// Storage flush strategy
   pub storage_flush_strategy: StorageFlushStrategy,
 }
@@ -32,9 +30,7 @@ impl GeoCacheConfig {
 #[derive(Default)]
 pub struct GeoCacheConfigBuilder {
   storage_file_path: Option<PathBuf>,
-
   memory_max_size: Option<usize>,
-
   storage_flush_strategy: Option<StorageFlushStrategy>,
 }
 

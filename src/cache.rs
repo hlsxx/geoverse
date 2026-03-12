@@ -47,6 +47,8 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
       self.strategy.read(storage);
     }
 
+    self.strategy.memory_max_size(self.config.memory_max_size);
+
     Ok(())
   }
 

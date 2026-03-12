@@ -31,7 +31,10 @@ pub enum StorageFlushStrategy {
 /// Implement this trait to provide a custom storage strategy, e.g., Deque or LRU.
 pub trait StorageStrategy {
   // Defines how many items will dropped at delete call
-  const ON_DELETE_ITEMS_COUNT: usize;
+  const ON_DELETE_ITEMS_COUNT_PERCENTAGE: usize;
+
+  /// Sets a max memory size
+  fn memory_max_size(&mut self, size: usize);
 
   /// Inserts a `cache_key` with its associated `address` into the storage.
   ///

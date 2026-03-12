@@ -19,10 +19,16 @@ pub struct DequeStorage {
   cache_keys: VecDeque<CacheKey>,
   /// Current total memory usage in bytes
   memory_size: usize,
+  /// Max allowed memory usage
+  memory_max_size: usize,
 }
 
 impl StorageStrategy for DequeStorage {
-  const ON_DELETE_ITEMS_COUNT: usize = 10;
+  const ON_DELETE_ITEMS_COUNT_PERCENTAGE: usize = 10;
+
+  fn memory_max_size(&mut self, size: usize) {
+    self.memory_max_size = size;
+  }
 
   fn insert(
     &mut self,
@@ -101,7 +107,7 @@ impl StorageStrategy for DequeStorage {
       self
         .cache_keys
         .len()
-        .saturating_sub(Self::ON_DELETE_ITEMS_COUNT),
+        .saturating_sub(self.on_delete_items_count()),
     );
 
     let remaining: HashSet<&CacheKey> = self.cache_keys.iter().collect();
@@ -131,6 +137,22 @@ impl DequeStorage {
     let cache_key = self.cache_keys.back()?;
     let address = self.data.get(cache_key)?;
     Some((cache_key, address))
+  }
+
+  /// Returns the number of items to evict when memory limit is exceeded.
+  /// Calculated as a percentage of `memory_size`, capped at the current cache size.
+  fn on_delete_items_count(&self) -> usize {
+    if self.memory_max_size == 0 || self.cache_keys.is_empty() {
+      return 0;
+    }
+
+    let usage_percentage = (self.memory_size * 100) / self.memory_max_size;
+    if usage_percentage >= Self::ON_DELETE_ITEMS_COUNT_PERCENTAGE {
+      let count = (self.cache_keys.len() * Self::ON_DELETE_ITEMS_COUNT_PERCENTAGE) / 100;
+      count.min(self.cache_keys.len())
+    } else {
+      0
+    }
   }
 }
 
@@ -182,7 +204,7 @@ mod tests {
     storage::{Storage, StorageStrategy, deque::DequeStorageItem},
   };
 
-  const SIZE: usize = 30;
+  const SIZE: usize = 100;
   // unknown-00
   const ADDRESS_LEN: usize = 10;
 
@@ -192,9 +214,15 @@ mod tests {
     (storage, tmp)
   }
 
+  fn create_test_deque_storage() -> DequeStorage {
+    let mut deque_storage = DequeStorage::default();
+    deque_storage.memory_max_size(1000);
+    deque_storage
+  }
+
   #[test]
   fn deque_read() {
-    let mut deque_storage = DequeStorage::default();
+    let mut deque_storage = create_test_deque_storage();
     let (mut storage, _tmp) = create_test_storage();
 
     deque_storage
@@ -228,7 +256,7 @@ mod tests {
 
   #[test]
   fn deque_insertion() {
-    let mut deque_storage = DequeStorage::default();
+    let mut deque_storage = create_test_deque_storage();
 
     deque_storage
       .insert(
@@ -250,43 +278,53 @@ mod tests {
 
   #[test]
   fn deque_deletion() {
-    let mut deque_storage = DequeStorage::default();
+    let mut deque_storage = create_test_deque_storage();
     let (mut storage, _tmp) = create_test_storage();
 
     // Mock the data
-    for i in 1..=30 {
+    for i in 1..=SIZE {
       deque_storage
         .insert(
-          CacheKey::try_new(48.1645819 + i as f64, 17.1847104 + i as f64, "en").unwrap(),
+          CacheKey::try_new(
+            48.1645819 + (i as f64 * 0.01) as f64,
+            17.1847104 + (i as f64 * 0.01) as f64,
+            "en",
+          )
+          .unwrap(),
           format!("unknown-{:02}", i),
         )
         .unwrap();
     }
 
-    assert_eq!(deque_storage.cache_keys.len(), 30);
-    assert_eq!(deque_storage.data.len(), 30);
+    assert_eq!(deque_storage.cache_keys.len(), SIZE);
+    assert_eq!(deque_storage.data.len(), SIZE);
 
     deque_storage.flush(&mut storage).unwrap();
     deque_storage.evict(&mut storage).unwrap();
 
-    assert_eq!(deque_storage.cache_keys.len(), 20);
-    assert_eq!(deque_storage.data.len(), 20);
+    assert_eq!(deque_storage.cache_keys.len(), 90);
+    assert_eq!(deque_storage.data.len(), 90);
 
     let first_record = deque_storage.first().unwrap();
     let last_record = deque_storage.last().unwrap();
 
-    assert_eq!(first_record.1, "unknown-30");
+    assert_eq!(first_record.1, "unknown-100");
     assert_eq!(last_record.1, "unknown-11");
   }
 
   #[test]
   fn deque_memory_size() {
-    let mut deque_storage = DequeStorage::default();
+    let mut deque_storage = create_test_deque_storage();
 
     for i in 0..SIZE {
       deque_storage
         .insert(
-          CacheKey::try_new(48.1645819 + i as f64, 17.1847104 + i as f64, "en").unwrap(),
+          CacheKey::try_new(
+            48.1645819 + (i as f64 * 0.01) as f64,
+            17.1847104 + (i as f64 * 0.01) as f64,
+            "en",
+          )
+          .unwrap(),
           format!("unknown-{:02}", i),
         )
         .unwrap();
@@ -300,14 +338,19 @@ mod tests {
 
   #[test]
   fn deque_memory_size_with_eviction() {
-    let mut deque_storage = DequeStorage::default();
+    let mut deque_storage = create_test_deque_storage();
     let (mut storage, _tmp) = create_test_storage();
 
     // Mock the data
     for i in 0..SIZE {
       deque_storage
         .insert(
-          CacheKey::try_new(48.1645819 + i as f64, 17.1847104 + i as f64, "en").unwrap(),
+          CacheKey::try_new(
+            48.1645819 + (i as f64 * 0.01) as f64,
+            17.1847104 + (i as f64 * 0.01) as f64,
+            "en",
+          )
+          .unwrap(),
           format!("unknown-{:02}", i),
         )
         .unwrap();
@@ -315,9 +358,10 @@ mod tests {
 
     const MEMORY_SIZE: usize = DequeStorageItem::len() * SIZE + ADDRESS_LEN * SIZE;
 
-    const MEMORY_SIZE_OF_DELETED_RECORDS: usize = DequeStorageItem::len()
-      * DequeStorage::ON_DELETE_ITEMS_COUNT
-      + ADDRESS_LEN * DequeStorage::ON_DELETE_ITEMS_COUNT;
+    let on_delete_items_count = deque_storage.on_delete_items_count();
+
+    let memory_size_of_deleted_records =
+      DequeStorageItem::len() * on_delete_items_count + ADDRESS_LEN * on_delete_items_count;
 
     assert_eq!(deque_storage.get_in_memory_size(), MEMORY_SIZE);
 
@@ -326,7 +370,7 @@ mod tests {
 
     assert_eq!(
       deque_storage.get_in_memory_size(),
-      MEMORY_SIZE - MEMORY_SIZE_OF_DELETED_RECORDS
+      MEMORY_SIZE - memory_size_of_deleted_records
     );
   }
 }
