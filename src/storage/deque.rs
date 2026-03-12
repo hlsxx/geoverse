@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
   cache_key::{CacheKey, CacheKeyRaw},
@@ -6,16 +6,16 @@ use crate::{
 };
 
 /// DequeStorage is a simple persistence storage technique
-/// which consits of a `data` field and a `cache_keys` field.
+/// which consists of a `data` field and a `cache_keys` field.
 ///
-/// Field `cache_keys` is essential for rememberering the insertion
+/// Field `cache_keys` is essential for remembering the insertion
 /// order of each `CacheKey` - the oldest inserted key sits at
 /// the back of the `VecDeque`.
 #[derive(Default)]
 pub struct DequeStorage {
   /// Maps each `CacheKey` to its corresponding `Address` in memory
   data: HashMap<CacheKey, Address>,
-  /// Tracks insertion order of keys (oldest at the back)
+  /// Tracks insertion order of keys (newest at the front, oldest at the back)
   cache_keys: VecDeque<CacheKey>,
   /// Current total memory usage in bytes
   memory_size: usize,
@@ -29,8 +29,8 @@ impl StorageStrategy for DequeStorage {
     cache_key: CacheKey,
     address: Address,
   ) -> Result<(), Box<dyn std::error::Error>> {
-    self.increment_size(address.len());
-    self.insert_key(cache_key.clone());
+    self.memory_size += DequeStorageItem::len() + address.len();
+    self.cache_keys.push_front(cache_key.clone());
     self.data.insert(cache_key, address);
     Ok(())
   }
@@ -47,37 +47,39 @@ impl StorageStrategy for DequeStorage {
     self
       .cache_keys
       .iter()
-      .flat_map(|cache_key| {
-        let address = self.data.get(cache_key).unwrap();
-        DeqeueStorageItem::from_cache_key(cache_key, address).to_bytes()
+      .filter_map(|cache_key| {
+        self
+          .data
+          .get(cache_key)
+          .map(|address| DequeStorageItem::from_cache_key(cache_key, address).to_bytes())
       })
-      .collect::<Vec<u8>>()
+      .flatten()
+      .collect()
   }
 
   fn read(&mut self, storage: &mut Storage) -> std::io::Result<()> {
     let bytes = storage.read()?;
     let mut pos = 0;
 
-    // Get storage item len - address len
-    const STORAGE_ITEM_LEN: usize = DeqeueStorageItem::len() - 1;
+    // Fixed-width key portion: total item size minus the 1-byte address-length prefix
+    const KEY_LEN: usize = DequeStorageItem::len() - 1;
 
-    while pos + STORAGE_ITEM_LEN <= bytes.len() {
-      let key_bytes: [u8; STORAGE_ITEM_LEN] =
-        bytes[pos..pos + STORAGE_ITEM_LEN].try_into().unwrap();
+    while pos + KEY_LEN <= bytes.len() {
+      let key_bytes: [u8; KEY_LEN] = bytes[pos..pos + KEY_LEN].try_into().unwrap();
       let cache_key_raw = CacheKeyRaw(key_bytes);
-      pos += STORAGE_ITEM_LEN;
+      pos += KEY_LEN;
 
       let addr_len = bytes[pos] as usize;
       pos += 1;
 
-      let address = String::from_utf8_lossy(&bytes[pos..pos + addr_len]);
+      let address = String::from_utf8_lossy(&bytes[pos..pos + addr_len]).into_owned();
       pos += addr_len;
 
       let cache_key: CacheKey = cache_key_raw.into();
-
-      self.data.insert(cache_key.clone(), address.to_string());
-      self.cache_keys.push_front(cache_key);
-      self.increment_size(address.len());
+      self.memory_size += DequeStorageItem::len() + addr_len;
+      self.data.insert(cache_key.clone(), address);
+      // push_back preserves the on-disk order (newest first → oldest last)
+      self.cache_keys.push_back(cache_key);
     }
 
     Ok(())
@@ -88,10 +90,9 @@ impl StorageStrategy for DequeStorage {
   }
 
   fn evict_if_needed(&mut self, storage: &mut Storage, address_len: usize) -> std::io::Result<()> {
-    if DeqeueStorageItem::len() + address_len > self.memory_size {
+    if DequeStorageItem::len() + address_len > self.memory_size {
       self.evict(storage)?;
     }
-
     Ok(())
   }
 
@@ -103,11 +104,12 @@ impl StorageStrategy for DequeStorage {
         .saturating_sub(Self::ON_DELETE_ITEMS_COUNT),
     );
 
-    self.data.retain(|key, _| self.cache_keys.contains(key));
+    let remaining: HashSet<&CacheKey> = self.cache_keys.iter().collect();
+    self.data.retain(|key, _| remaining.contains(key));
 
     self.flush(storage)?;
 
-    // Size equals persistance disk size
+    // Sync memory_size to the actual serialized size on disk
     self.memory_size = storage.len()? as usize;
 
     Ok(())
@@ -115,52 +117,33 @@ impl StorageStrategy for DequeStorage {
 }
 
 impl DequeStorage {
-  fn insert_key(&mut self, cache_key: CacheKey) {
-    self.cache_keys.push_front(cache_key.clone());
-  }
-
-  /// Increments in a memory size or persistance disk size
-  fn increment_size(&mut self, address_len: usize) {
-    self.memory_size += DeqeueStorageItem::len() + address_len;
-  }
-
-  /// Returns a first record
+  /// Returns the most recently inserted record.
   #[allow(unused)]
   fn first(&self) -> Option<(&CacheKey, &Address)> {
-    if let Some(cache_key) = self.cache_keys.front()
-      && let Some(address) = self.data.get(cache_key)
-    {
-      return Some((cache_key, address));
-    }
-
-    None
+    let cache_key = self.cache_keys.front()?;
+    let address = self.data.get(cache_key)?;
+    Some((cache_key, address))
   }
 
-  /// Returns a last record
+  /// Returns the oldest inserted record.
   #[allow(unused)]
   fn last(&self) -> Option<(&CacheKey, &Address)> {
-    if let Some(cache_key) = self.cache_keys.back()
-      && let Some(address) = self.data.get(cache_key)
-    {
-      return Some((cache_key, address));
-    }
-
-    None
+    let cache_key = self.cache_keys.back()?;
+    let address = self.data.get(cache_key)?;
+    Some((cache_key, address))
   }
 }
 
-pub(crate) struct DeqeueStorageItem {
+pub(crate) struct DequeStorageItem {
   // Raw cache key
   cache_key_raw: CacheKeyRaw,
-
-  /// Address string length (limited to 255 length)
+  /// Address string length (TODO:limited to 255 length)
   address_len: u8,
-
   /// Geocoded address string
   address: Address,
 }
 
-impl DeqeueStorageItem {
+impl DequeStorageItem {
   pub fn from_cache_key(cache_key: &CacheKey, address: &Address) -> Self {
     Self {
       cache_key_raw: cache_key.clone().into(),
@@ -177,9 +160,8 @@ impl DeqeueStorageItem {
     bytes
   }
 
-  #[allow(unused)]
-  /// Size in a binary file.
-  /// 2 (lang) + 2 * 8 (2 * lat/lng) + 2 (2 * ;) + 1 (size of the address [limited to 255])
+  /// Size of the fixed-width portion of a record in bytes.
+  /// 2 (lang) + 2 × 8 (lat/lng) + 2 (separators) + 1 (address length prefix)
   pub const fn len() -> usize {
     const LANG_SIZE: usize = 2;
     const COORD_SIZE: usize = 8;
@@ -197,7 +179,7 @@ mod tests {
   use crate::{
     DequeStorage,
     cache_key::CacheKey,
-    storage::{Storage, StorageStrategy, deque::DeqeueStorageItem},
+    storage::{Storage, StorageStrategy, deque::DequeStorageItem},
   };
 
   const SIZE: usize = 30;
@@ -312,7 +294,7 @@ mod tests {
 
     assert_eq!(
       deque_storage.get_in_memory_size(),
-      DeqeueStorageItem::len() * SIZE + ADDRESS_LEN * SIZE
+      DequeStorageItem::len() * SIZE + ADDRESS_LEN * SIZE
     );
   }
 
@@ -331,9 +313,9 @@ mod tests {
         .unwrap();
     }
 
-    const MEMORY_SIZE: usize = DeqeueStorageItem::len() * SIZE + ADDRESS_LEN * SIZE;
+    const MEMORY_SIZE: usize = DequeStorageItem::len() * SIZE + ADDRESS_LEN * SIZE;
 
-    const MEMORY_SIZE_OF_DELETED_RECORDS: usize = DeqeueStorageItem::len()
+    const MEMORY_SIZE_OF_DELETED_RECORDS: usize = DequeStorageItem::len()
       * DequeStorage::ON_DELETE_ITEMS_COUNT
       + ADDRESS_LEN * DequeStorage::ON_DELETE_ITEMS_COUNT;
 

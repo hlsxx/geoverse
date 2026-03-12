@@ -118,7 +118,7 @@ mod tests {
   use crate::{
     cache::GeoCache,
     cache_config::{GeoCacheConfig, GeoCacheConfigBuilder},
-    storage::deque::{DeqeueStorageItem, DequeStorage},
+    storage::deque::{DequeStorage, DequeStorageItem},
   };
 
   fn create_example_geo_cache_config() -> GeoCacheConfig {
@@ -223,7 +223,7 @@ mod tests {
 
     assert_eq!(
       storage.len().unwrap(),
-      (DeqeueStorageItem::len() * 2 + p_len + b_len) as u64
+      (DequeStorageItem::len() * 2 + p_len + b_len) as u64
     )
   }
 }
