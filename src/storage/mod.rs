@@ -66,6 +66,12 @@ pub trait StorageStrategy {
   fn in_memory_record_count(&self) -> usize;
 }
 
+#[cfg(feature = "testing")]
+/// Used in DHAT testing, avoid DSA allocations
+pub trait StorageStrategyWithCapacity {
+  fn with_capacity(capacity: usize) -> Self;
+}
+
 pub struct Storage {
   /// The underlying file used for persistent storage
   file: File,

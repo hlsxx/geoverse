@@ -5,6 +5,9 @@ use crate::{
   storage::{Address, Storage, StorageStrategy},
 };
 
+#[cfg(feature = "testing")]
+use crate::storage::StorageStrategyWithCapacity;
+
 /// DequeStorage is a simple persistence storage technique
 /// which consists of a `data` field and a `cache_keys` field.
 ///
@@ -123,6 +126,18 @@ impl StorageStrategy for DequeStorage {
 
   fn in_memory_record_count(&self) -> usize {
     self.cache_keys.len()
+  }
+}
+
+#[cfg(feature = "testing")]
+impl StorageStrategyWithCapacity for DequeStorage {
+  fn with_capacity(capacity: usize) -> Self {
+    Self {
+      data: HashMap::with_capacity(capacity),
+      cache_keys: VecDeque::with_capacity(capacity),
+      memory_size: 0,
+      memory_max_size: 1000,
+    }
   }
 }
 

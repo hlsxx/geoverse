@@ -1,12 +1,15 @@
 #![allow(unused)]
 
-use std::{error::Error, io};
+use std::{error::Error, io, path::PathBuf};
 
 use crate::{
   cache_config::GeoCacheConfig,
   cache_key::CacheKey,
   storage::{Address, Storage, StorageFlushStrategy, StorageStrategy},
 };
+
+#[cfg(feature = "testing")]
+use crate::storage::StorageStrategyWithCapacity;
 
 pub struct GeoCache<S: StorageStrategy> {
   /// Cache configuration
@@ -20,22 +23,39 @@ pub struct GeoCache<S: StorageStrategy> {
 }
 
 impl<S: StorageStrategy + Default> GeoCache<S> {
+  fn create_storage(storage_file_path: Option<&PathBuf>) -> Option<Storage> {
+    storage_file_path
+      .as_ref()
+      .and_then(|file_path| match Storage::try_new(file_path) {
+        Ok(storage) => Some(storage),
+        Err(err) => {
+          println!("GeoCache storage error: {}", err);
+          None
+        }
+      })
+  }
+
   pub fn new(config: GeoCacheConfig) -> Self {
-    let storage =
-      config
-        .storage_file_path
-        .as_ref()
-        .and_then(|file_path| match Storage::try_new(file_path) {
-          Ok(storage) => Some(storage),
-          Err(err) => {
-            println!("GeoCache storage error: {}", err);
-            None
-          }
-        });
+    let storage = GeoCache::<S>::create_storage(config.storage_file_path.as_ref());
 
     Self {
       config,
       strategy: S::default(),
+      storage,
+      pending_inserts: 0,
+    }
+  }
+
+  #[cfg(feature = "testing")]
+  pub fn with_capacity(config: GeoCacheConfig, capacity: usize) -> Self
+  where
+    S: StorageStrategyWithCapacity,
+  {
+    let storage = GeoCache::<S>::create_storage(config.storage_file_path.as_ref());
+
+    Self {
+      config,
+      strategy: S::with_capacity(capacity),
       storage,
       pending_inserts: 0,
     }
