@@ -1,6 +1,6 @@
 #![cfg(feature = "testing")]
 
-use geoverse::{DequeStorage, GeoCache, GeoCacheConfig, GeoCacheConfigBuilder};
+use geoverse::{DequeStorage, GeoCache, GeoCacheConfigBuilder};
 
 // Used in storage strategy internal data structures
 const CAPACITY_SIZE: usize = 100;
@@ -8,12 +8,8 @@ const CAPACITY_SIZE: usize = 100;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-fn create_example_geo_cache_config() -> GeoCacheConfig {
-  GeoCacheConfigBuilder::default().build()
-}
-
 fn create_example_deque_geo_cache() -> GeoCache<DequeStorage> {
-  GeoCache::with_capacity(create_example_geo_cache_config(), CAPACITY_SIZE)
+  GeoCache::with_capacity(GeoCacheConfigBuilder::default().build(), CAPACITY_SIZE)
 }
 
 #[test]
