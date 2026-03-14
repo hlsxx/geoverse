@@ -33,9 +33,6 @@ pub trait StorageStrategy {
   // Defines how many items will dropped at delete call
   const ON_DELETE_ITEMS_COUNT_PERCENTAGE: usize;
 
-  /// Sets a max memory size
-  fn memory_max_size(&mut self, size: usize);
-
   /// Inserts a `cache_key` with its associated `address` into the storage.
   ///
   /// Returns an error if the insertion fails.
@@ -43,6 +40,9 @@ pub trait StorageStrategy {
 
   /// Retrieves the `Address` associated with the given `cache_key`, if it exists.
   fn get(&self, cache_key: &CacheKey) -> Option<&Address>;
+
+  /// Sets a max memory size
+  fn memory_max_size(&mut self, size: usize);
 
   /// Returns current in a memory usage size
   fn get_in_memory_size(&self) -> usize;
@@ -61,6 +61,9 @@ pub trait StorageStrategy {
 
   /// Evicts from a memory or perstistance disk
   fn evict(&mut self, storage: &mut Storage) -> io::Result<()>;
+
+  /// Returns the number of records currently held in memory.
+  fn in_memory_record_count(&self) -> usize;
 }
 
 pub struct Storage {

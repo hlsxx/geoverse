@@ -26,10 +26,6 @@ pub struct DequeStorage {
 impl StorageStrategy for DequeStorage {
   const ON_DELETE_ITEMS_COUNT_PERCENTAGE: usize = 10;
 
-  fn memory_max_size(&mut self, size: usize) {
-    self.memory_max_size = size;
-  }
-
   fn insert(
     &mut self,
     cache_key: CacheKey,
@@ -43,6 +39,10 @@ impl StorageStrategy for DequeStorage {
 
   fn get(&self, cache_key: &CacheKey) -> Option<&Address> {
     self.data.get(cache_key)
+  }
+
+  fn memory_max_size(&mut self, size: usize) {
+    self.memory_max_size = size;
   }
 
   fn get_in_memory_size(&self) -> usize {
@@ -119,6 +119,10 @@ impl StorageStrategy for DequeStorage {
     self.memory_size = storage.len()? as usize;
 
     Ok(())
+  }
+
+  fn in_memory_record_count(&self) -> usize {
+    self.cache_keys.len()
   }
 }
 

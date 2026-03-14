@@ -16,7 +16,7 @@ pub struct GeoCache<S: StorageStrategy> {
   /// Underlying file storage, present only when persistence is enabled
   storage: Option<Storage>,
   /// Tracks the number of inserted records since the last flush
-  record_counter: usize,
+  pending_inserts: usize,
 }
 
 impl<S: StorageStrategy + Default> GeoCache<S> {
@@ -37,7 +37,7 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
       config,
       strategy: S::default(),
       storage,
-      record_counter: 0,
+      pending_inserts: 0,
     }
   }
 
@@ -67,13 +67,14 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
     match &self.config.storage_flush_strategy {
       StorageFlushStrategy::Never => false,
       StorageFlushStrategy::Immediately => true,
-      StorageFlushStrategy::RecordCount(count) => self.record_counter >= *count,
+      StorageFlushStrategy::RecordCount(count) => self.pending_inserts >= *count,
     }
   }
 
   fn flush_if_needed(&mut self) {
     if self.should_flush() {
       self.flush_into_storage();
+      self.pending_inserts = 0;
     }
   }
 
@@ -98,6 +99,7 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
 
     self.evict_if_needed(address.len())?;
     self.strategy.insert(cache_key, address)?;
+    self.pending_inserts += 1;
     self.flush_if_needed();
 
     Ok(())
@@ -111,6 +113,11 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
   ) -> Result<Option<&Address>, Box<dyn Error>> {
     Ok(self.strategy.get(&CacheKey::try_new(lat, lng, lang)?))
   }
+
+  /// Returns the number of records currently held in memory.
+  fn in_memory_record_count(&self) -> usize {
+    self.strategy.in_memory_record_count()
+  }
 }
 
 #[cfg(test)]
@@ -118,6 +125,7 @@ mod tests {
   use tempfile::NamedTempFile;
 
   use crate::{
+    StorageFlushStrategy,
     cache::GeoCache,
     cache_config::{GeoCacheConfig, GeoCacheConfigBuilder},
     storage::deque::{DequeStorage, DequeStorageItem},
@@ -131,15 +139,43 @@ mod tests {
     GeoCache::new(create_example_geo_cache_config())
   }
 
-  fn create_example_deque_geo_cache_with_storage_path(
+  fn create_disk_cache_flush_immediately(
     tmp: Option<NamedTempFile>,
   ) -> (GeoCache<DequeStorage>, NamedTempFile) {
     let tmp = tmp.unwrap_or_else(|| NamedTempFile::new().unwrap());
 
-    let mut geo_cache = GeoCache::new(
+    let mut geo_cache = GeoCache::<DequeStorage>::new(
       GeoCacheConfigBuilder::default()
         .storage_file_path(tmp.path())
-        .storage_flush_strategy(crate::StorageFlushStrategy::Immediately)
+        .storage_flush_strategy(StorageFlushStrategy::Immediately)
+        .build(),
+    );
+
+    geo_cache.init();
+    (geo_cache, tmp)
+  }
+
+  fn count_records_on_disk(tmp: &NamedTempFile) -> usize {
+    let mut geo_cache = GeoCache::<DequeStorage>::new(
+      GeoCacheConfigBuilder::default()
+        .storage_file_path(tmp.path())
+        .build(),
+    );
+
+    geo_cache.init();
+    geo_cache.in_memory_record_count()
+  }
+
+  fn create_disk_cache_flush_every_5(
+    tmp: Option<NamedTempFile>,
+  ) -> (GeoCache<DequeStorage>, NamedTempFile) {
+    let tmp = tmp.unwrap_or_else(|| NamedTempFile::new().unwrap());
+
+    let mut geo_cache = GeoCache::<DequeStorage>::new(
+      GeoCacheConfigBuilder::default()
+        .storage_file_path(tmp.path())
+        // Flush every 5th record
+        .storage_flush_strategy(StorageFlushStrategy::RecordCount(5))
         .build(),
     );
 
@@ -149,7 +185,7 @@ mod tests {
 
   #[test]
   fn test_deque_cache_insert() {
-    let (mut geo_cache, tmp) = create_example_deque_geo_cache_with_storage_path(None);
+    let (mut geo_cache, tmp) = create_disk_cache_flush_immediately(None);
 
     geo_cache
       .insert(
@@ -165,7 +201,7 @@ mod tests {
 
     drop(geo_cache);
 
-    let (mut geo_cache, tmp) = create_example_deque_geo_cache_with_storage_path(Some(tmp));
+    let (mut geo_cache, tmp) = create_disk_cache_flush_immediately(Some(tmp));
 
     assert_eq!(
       geo_cache.get((48.1645819, 17.1847104, "en")).unwrap(),
@@ -206,7 +242,7 @@ mod tests {
 
   #[test]
   fn test_deque_cache_get_file_size() {
-    let (mut geo_cache, tmp) = create_example_deque_geo_cache_with_storage_path(None);
+    let (mut geo_cache, tmp) = create_disk_cache_flush_immediately(None);
 
     let bratislava_address = "Bratislava, Slovakia".to_string();
     let prague_address = "Prague, Czechia".to_string();
@@ -227,5 +263,54 @@ mod tests {
       storage.len().unwrap(),
       (DequeStorageItem::len() * 2 + p_len + b_len) as u64
     )
+  }
+
+  #[test]
+  fn test_deque_cache_insert_record_count_flush() {
+    let (mut geo_cache, tmp) = create_disk_cache_flush_every_5(None);
+
+    geo_cache
+      .insert(
+        (48.1645819, 17.1847104, "en"),
+        "Bratislava, Slovakia".to_string(),
+      )
+      .unwrap();
+
+    assert_eq!(
+      geo_cache.get((48.1645819, 17.1847104, "en")).unwrap(),
+      Some(&"Bratislava, Slovakia".to_string())
+    );
+
+    let records_on_disk = count_records_on_disk(&tmp);
+
+    // Need to be 1 because in-meory after every insertion
+    assert_eq!(geo_cache.in_memory_record_count(), 1);
+
+    // Need to be zero because flushing every 5th
+    assert_eq!(records_on_disk, 0);
+
+    // Add another 8 records
+    for i in 0..8 {
+      geo_cache
+        .insert(
+          (48.1645819, 17.1847104, "en"),
+          "Bratislava, Slovakia".to_string(),
+        )
+        .unwrap();
+    }
+
+    let records_on_disk = count_records_on_disk(&tmp);
+
+    assert_eq!(geo_cache.in_memory_record_count(), 9);
+    assert_eq!(records_on_disk, 5);
+
+    geo_cache
+      .insert((50.073658, 14.418540, "en"), "Prague, Czechia".to_string())
+      .unwrap();
+
+    let records_on_disk = count_records_on_disk(&tmp);
+
+    assert_eq!(geo_cache.in_memory_record_count(), 10);
+    assert_eq!(records_on_disk, 10);
   }
 }
