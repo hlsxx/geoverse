@@ -2,8 +2,8 @@ use geoverse::{DequeStorage, GeoCache, GeoCacheConfigBuilder, StorageFlushStrate
 
 fn main() {
   let config = GeoCacheConfigBuilder::default()
+    .storage_file_path("geoverse.bin")
     .storage_flush_strategy(StorageFlushStrategy::Immediately)
-    .storage_file_path("./geoverse_db.bin")
     .build();
 
   let mut geo_cache = GeoCache::<DequeStorage>::new(config);
@@ -13,9 +13,12 @@ fn main() {
       (48.1645819, 17.1847104, "sk"),
       "Bratislava, Slovakia".to_string(),
     )
-    .unwrap();
+    .expect("failed to insert address");
 
-  let address = geo_cache.get((48.1645819, 17.1847104, "sk")).unwrap();
+  let address = geo_cache
+    .get((48.1645819, 17.1847104, "sk"))
+    .expect("error while loading address")
+    .expect("address not found");
 
-  println!("{:?}", address);
+  println!("{address}");
 }
