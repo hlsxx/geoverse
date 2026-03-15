@@ -1,44 +1,25 @@
-use std::{error::Error, fmt::Display};
+use thiserror::Error;
 
-#[derive(Debug)]
-pub struct GeoCoordError {
-  pub message: String,
-}
+#[derive(Debug, Error)]
+pub enum GeoCacheError {
+  #[error("latitude {value} is out of range [-90, 90]")]
+  LatitudeOutOfRange { value: f64 },
 
-#[derive(Debug)]
-pub struct CountryCodeError {
-  pub message: String,
-}
+  #[error("longitude {value} is out of range [-180, 180]")]
+  LongitudeOutOfRange { value: f64 },
 
-impl Display for GeoCoordError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.message)
-  }
-}
+  #[error("invalid coordinate format: {input:?}")]
+  InvalidFormat { input: String },
 
-impl Display for CountryCodeError {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.message)
-  }
-}
+  #[error("invalid country code: {code:?} (must be ISO 3166-1 alpha-2)")]
+  InvalidCountryCode { code: String },
 
-impl Error for GeoCoordError {}
-impl Error for CountryCodeError {}
+  #[error("country code has wrong lenght: expected 2 chars, got {len}")]
+  CountryCodeWrongLength { len: usize },
 
-#[macro_export]
-macro_rules! throw_geo_coord_error {
-  ($x:expr) => {
-    return Err(GeoCoordError {
-      message: $x.to_string(),
-    })
-  };
-}
+  #[error("invalid cache key length: expected 20 bytes, got {len}")]
+  CacheKeyRawInvalidLength { len: usize },
 
-#[macro_export]
-macro_rules! throw_country_code_error {
-  ($x:expr) => {
-    return Err(Box::new(CountryCodeError {
-      message: $x.to_string(),
-    }) as Box<dyn std::error::Error>)
-  };
+  #[error("invalid characters in cache key: {value:?} (only ASCII alphanumeric and '-' allowed)")]
+  CacheKeyRawInvalidCharacters { value: String },
 }

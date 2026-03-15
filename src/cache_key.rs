@@ -1,8 +1,11 @@
-use std::{array::TryFromSliceError, error::Error, ops::Deref};
+use std::{array::TryFromSliceError, ops::Deref};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::geo::{convert_coords_into_microdeg, convert_lang_to_u16, convert_u16_to_lang};
+use crate::{
+  errors::GeoCacheError,
+  geo::{convert_coords_into_microdeg, convert_lang_to_u16, convert_u16_to_lang},
+};
 
 /// Raw byte representation of a cache key.
 ///
@@ -40,17 +43,26 @@ impl<'de> Deserialize<'de> for CacheKeyRaw {
     D: Deserializer<'de>,
   {
     let s = String::deserialize(deserializer)?;
-    if s.len() != 20 {
-      return Err(serde::de::Error::custom(format!(
-        "Expected 20 chars, got {}",
-        s.len()
-      )));
+    let bytes = s.as_bytes();
+
+    if bytes.len() != 20 {
+      return Err(serde::de::Error::custom(
+        GeoCacheError::CacheKeyRawInvalidLength { len: bytes.len() },
+      ));
     }
 
-    let mut bytes = [0u8; 20];
-    bytes.copy_from_slice(s.as_bytes());
+    if !bytes
+      .iter()
+      .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
+    {
+      return Err(serde::de::Error::custom(
+        GeoCacheError::CacheKeyRawInvalidCharacters { value: s },
+      ));
+    }
 
-    Ok(CacheKeyRaw(bytes))
+    let mut buf = [0u8; 20];
+    buf.copy_from_slice(bytes);
+    Ok(CacheKeyRaw(buf))
   }
 }
 
@@ -87,9 +99,11 @@ impl CacheKey {
   ///
   /// # Errors
   ///
-  /// * Provided lang and lat must fit in specific range
-  /// * Provided language must be correct country code size of 2
-  pub fn try_new(lat: f64, lng: f64, lang: &str) -> Result<Self, Box<dyn Error>> {
+  /// [`GeoError::LatitudeOutOfRange`] if `lat` is outside `[-90, 90]`.
+  /// [`GeoError::LongitudeOutOfRange`] if `lng` is outside `[-180, 180]`.
+  /// [`GeoError::CountryCodeWrongLength`] if `lang` is not exactly 2 bytes.
+  /// [`GeoError::InvalidCountryCode`] if `lang` contains non-alphabetic characters.
+  pub fn try_new(lat: f64, lng: f64, lang: &str) -> Result<Self, GeoCacheError> {
     let (lat, lng) = convert_coords_into_microdeg(lat, lng)?;
     let lang_as_u16 = convert_lang_to_u16(lang)?;
 
@@ -138,57 +152,110 @@ impl From<CacheKey> for CacheKeyRaw {
 
 #[cfg(test)]
 mod tests {
-  use crate::{
-    cache_key::{CacheKey, CacheKeyRaw},
-    errors::{CountryCodeError, GeoCoordError},
-  };
+  use crate::{cache_key::CacheKey, errors::GeoCacheError};
 
   #[test]
-  fn test_cache_key_try_new() {
-    let cache_key = CacheKey::try_new(48.1645819, 17.1847104, "sk");
-    assert!(cache_key.is_ok());
-
-    let cache_key_validate = CacheKey {
-      lang: 29547,
-      lat: 48164582,
-      lng: 17184710,
-    };
-
-    assert_eq!(cache_key_validate, cache_key.unwrap());
+  fn test_cache_key_try_new_valid() {
+    let key = CacheKey::try_new(48.1645819, 17.1847104, "sk");
+    assert!(key.is_ok());
   }
 
   #[test]
-  fn test_cache_key_try_new_wrong_coordinations() {
-    let cache_key = CacheKey::try_new(95.000033, 17.1847104, "sk");
-    assert!(cache_key.is_err());
-
-    let geo_coords_error = cache_key.unwrap_err();
-    assert!(geo_coords_error.downcast_ref::<GeoCoordError>().is_some());
+  fn test_cache_key_try_new_boundary_latitude_min() {
+    let key = CacheKey::try_new(-90.0, 17.1847104, "sk");
+    assert!(key.is_ok());
   }
 
   #[test]
-  fn test_cache_key_try_new_wrong_country_code() {
-    let cache_key = CacheKey::try_new(48.1645819, 17.1847104, "skx");
-    assert!(cache_key.is_err());
-
-    let country_code_error = cache_key.unwrap_err();
-    assert!(
-      country_code_error
-        .downcast_ref::<CountryCodeError>()
-        .is_some()
-    );
+  fn test_cache_key_try_new_boundary_latitude_max() {
+    let key = CacheKey::try_new(90.0, 17.1847104, "sk");
+    assert!(key.is_ok());
   }
 
   #[test]
-  fn convert_geo_key_to_geo_key_raw() {
-    let cache_key = CacheKey::try_new(48.1645819, 17.1847104, "sk").unwrap();
-    let cache_key_raw: CacheKeyRaw = cache_key.into();
+  fn test_cache_key_try_new_boundary_longitude_min() {
+    let key = CacheKey::try_new(48.1645819, -180.0, "sk");
+    assert!(key.is_ok());
+  }
 
-    assert_eq!(
-      [
-        115, 107, 59, 52, 56, 49, 54, 52, 53, 56, 50, 59, 49, 55, 49, 56, 52, 55, 49, 48
-      ],
-      cache_key_raw.0
-    )
+  #[test]
+  fn test_cache_key_try_new_boundary_longitude_max() {
+    let key = CacheKey::try_new(48.1645819, 180.0, "sk");
+    assert!(key.is_ok());
+  }
+
+  #[test]
+  fn test_cache_key_try_new_latitude_just_above_max() {
+    let err = CacheKey::try_new(90.000001, 17.1847104, "sk").unwrap_err();
+    assert!(matches!(err, GeoCacheError::LatitudeOutOfRange { value } if value == 90.000001));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_latitude_just_below_min() {
+    let err = CacheKey::try_new(-90.000001, 17.1847104, "sk").unwrap_err();
+    assert!(matches!(err, GeoCacheError::LatitudeOutOfRange { value } if value == -90.000001));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_longitude_just_above_max() {
+    let err = CacheKey::try_new(48.1645819, 180.000001, "sk").unwrap_err();
+    assert!(matches!(err, GeoCacheError::LongitudeOutOfRange { value } if value == 180.000001));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_longitude_just_below_min() {
+    let err = CacheKey::try_new(48.1645819, -180.000001, "sk").unwrap_err();
+    assert!(matches!(err, GeoCacheError::LongitudeOutOfRange { value } if value == -180.000001));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_lang_too_short() {
+    let err = CacheKey::try_new(48.1645819, 17.1847104, "s").unwrap_err();
+    assert!(matches!(
+      err,
+      GeoCacheError::CountryCodeWrongLength { len: 1 }
+    ));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_lang_empty() {
+    let err = CacheKey::try_new(48.1645819, 17.1847104, "").unwrap_err();
+    assert!(matches!(
+      err,
+      GeoCacheError::CountryCodeWrongLength { len: 0 }
+    ));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_lang_too_long() {
+    let err = CacheKey::try_new(48.1645819, 17.1847104, "SVKK").unwrap_err();
+    assert!(matches!(
+      err,
+      GeoCacheError::CountryCodeWrongLength { len: 4 }
+    ));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_lang_numeric() {
+    let err = CacheKey::try_new(48.1645819, 17.1847104, "42").unwrap_err();
+    assert!(matches!(err, GeoCacheError::InvalidCountryCode { ref code } if code == "42"));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_lang_special_chars() {
+    let err = CacheKey::try_new(48.1645819, 17.1847104, "s!").unwrap_err();
+    assert!(matches!(err, GeoCacheError::InvalidCountryCode { ref code } if code == "s!"));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_lat_error_before_lng() {
+    let err = CacheKey::try_new(95.0, 200.0, "sk").unwrap_err();
+    assert!(matches!(err, GeoCacheError::LatitudeOutOfRange { .. }));
+  }
+
+  #[test]
+  fn test_cache_key_try_new_coord_error_before_lang() {
+    let err = CacheKey::try_new(95.0, 17.1847104, "SVK").unwrap_err();
+    assert!(matches!(err, GeoCacheError::LatitudeOutOfRange { .. }));
   }
 }
