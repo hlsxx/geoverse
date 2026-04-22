@@ -83,7 +83,7 @@ cargo test
 Run allocation tests:
 
 ```bash
-cargo test --features testing --test allocations -- --test-threads=1
+cargo test --features "dhat-heap,testing" --test allocations -- --test-threads=1
 ```
 
 ## License
