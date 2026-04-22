@@ -135,7 +135,7 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
   }
 
   /// Returns the number of records currently held in memory.
-  fn in_memory_record_count(&self) -> usize {
+  pub fn in_memory_record_count(&self) -> usize {
     self.strategy.in_memory_record_count()
   }
 }
