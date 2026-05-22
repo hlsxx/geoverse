@@ -6,7 +6,7 @@ fn main() {
     .storage_flush_strategy(StorageFlushStrategy::Immediately)
     .build();
 
-  let mut geo_cache = GeoCache::<DequeStorage>::new(config);
+  let mut geo_cache = GeoCache::<DequeStorage>::new(&config);
   geo_cache.init().unwrap();
 
   geo_cache

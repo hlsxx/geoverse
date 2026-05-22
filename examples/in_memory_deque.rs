@@ -2,7 +2,7 @@ use geoverse::{DequeStorage, GeoCache, GeoCacheConfigBuilder};
 
 fn main() {
   let config = GeoCacheConfigBuilder::default().build();
-  let mut geo_cache = GeoCache::<DequeStorage>::new(config);
+  let mut geo_cache = GeoCache::<DequeStorage>::new(&config);
 
   geo_cache
     .insert(

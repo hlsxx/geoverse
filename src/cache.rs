@@ -12,9 +12,9 @@ use crate::{
 #[cfg(feature = "testing")]
 use crate::storage::StorageStrategyWithCapacity;
 
-pub struct GeoCache<S: StorageStrategy> {
+pub struct GeoCache<'a, S: StorageStrategy> {
   /// Cache configuration
-  config: GeoCacheConfig,
+  config: &'a GeoCacheConfig,
   /// The active storage strategy (e.g., Deque, LRU)
   strategy: S,
   /// Underlying file storage, present only when persistence is enabled
@@ -23,7 +23,18 @@ pub struct GeoCache<S: StorageStrategy> {
   pending_inserts: usize,
 }
 
-impl<S: StorageStrategy + Default> GeoCache<S> {
+impl<'a, S: StorageStrategy + Default> GeoCache<'a, S> {
+  pub fn new(config: &'a GeoCacheConfig) -> Self {
+    let storage = GeoCache::<S>::create_storage(config.storage_file_path.as_ref());
+
+    Self {
+      config,
+      strategy: S::default(),
+      storage,
+      pending_inserts: 0,
+    }
+  }
+
   fn create_storage(storage_file_path: Option<&PathBuf>) -> Option<Storage> {
     storage_file_path
       .as_ref()
@@ -36,19 +47,8 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
       })
   }
 
-  pub fn new(config: GeoCacheConfig) -> Self {
-    let storage = GeoCache::<S>::create_storage(config.storage_file_path.as_ref());
-
-    Self {
-      config,
-      strategy: S::default(),
-      storage,
-      pending_inserts: 0,
-    }
-  }
-
   #[cfg(feature = "testing")]
-  pub fn with_capacity(config: GeoCacheConfig, capacity: usize) -> Self
+  pub fn with_capacity(config: &'a GeoCacheConfig, capacity: usize) -> Self
   where
     S: StorageStrategyWithCapacity,
   {
@@ -117,7 +117,9 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
     address: Address,
   ) -> Result<(), Box<dyn Error>> {
     if address.len() > self.config.max_address_length {
-      return Err(Box::new(GeoCacheError::AddressTooLong { len: address.len() }));
+      return Err(Box::new(GeoCacheError::AddressTooLong {
+        len: address.len(),
+      }));
     }
 
     let cache_key = CacheKey::try_new(lat, lng, lang)?;
@@ -160,32 +162,35 @@ mod tests {
     GeoCacheConfigBuilder::default().build()
   }
 
-  fn create_example_deque_geo_cache() -> GeoCache<DequeStorage> {
-    GeoCache::new(create_example_geo_cache_config())
+  fn create_example_deque_geo_cache() -> GeoCache<'static, DequeStorage> {
+    let config = Box::leak(Box::new(create_example_geo_cache_config()));
+    GeoCache::new(config)
   }
 
   fn create_disk_cache_flush_immediately(
     tmp: Option<NamedTempFile>,
-  ) -> (GeoCache<DequeStorage>, NamedTempFile) {
+  ) -> (GeoCache<'static, DequeStorage>, NamedTempFile) {
     let tmp = tmp.unwrap_or_else(|| NamedTempFile::new().unwrap());
+    let path = tmp.path().to_string_lossy().to_string();
 
-    let mut geo_cache = GeoCache::<DequeStorage>::new(
+    let config = Box::leak(Box::new(
       GeoCacheConfigBuilder::default()
-        .storage_file_path(tmp.path())
+        .storage_file_path(&path)
         .storage_flush_strategy(StorageFlushStrategy::Immediately)
         .build(),
-    );
+    ));
 
+    let mut geo_cache = GeoCache::<DequeStorage>::new(config);
     geo_cache.init();
     (geo_cache, tmp)
   }
 
   fn count_records_on_disk(tmp: &NamedTempFile) -> usize {
-    let mut geo_cache = GeoCache::<DequeStorage>::new(
-      GeoCacheConfigBuilder::default()
-        .storage_file_path(tmp.path())
-        .build(),
-    );
+    let config = GeoCacheConfigBuilder::default()
+      .storage_file_path(tmp.path())
+      .build();
+
+    let mut geo_cache = GeoCache::<DequeStorage>::new(&config);
 
     geo_cache.init();
     geo_cache.in_memory_record_count()
@@ -193,17 +198,18 @@ mod tests {
 
   fn create_disk_cache_flush_every_5(
     tmp: Option<NamedTempFile>,
-  ) -> (GeoCache<DequeStorage>, NamedTempFile) {
+  ) -> (GeoCache<'static, DequeStorage>, NamedTempFile) {
     let tmp = tmp.unwrap_or_else(|| NamedTempFile::new().unwrap());
+    let path = tmp.path().to_string_lossy().to_string();
 
-    let mut geo_cache = GeoCache::<DequeStorage>::new(
+    let config = Box::leak(Box::new(
       GeoCacheConfigBuilder::default()
-        .storage_file_path(tmp.path())
-        // Flush every 5th record
+        .storage_file_path(path)
         .storage_flush_strategy(StorageFlushStrategy::RecordCount(5))
         .build(),
-    );
+    ));
 
+    let mut geo_cache = GeoCache::<DequeStorage>::new(config);
     geo_cache.init();
     (geo_cache, tmp)
   }
