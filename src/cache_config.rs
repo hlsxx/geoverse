@@ -9,6 +9,8 @@ pub struct GeoCacheConfig {
   pub memory_max_size: usize,
   /// Storage flush strategy
   pub storage_flush_strategy: StorageFlushStrategy,
+  /// Max length of an address string in bytes
+  pub max_address_length: usize,
 }
 
 impl Default for GeoCacheConfig {
@@ -17,6 +19,7 @@ impl Default for GeoCacheConfig {
       storage_file_path: None,
       memory_max_size: 10 * 1024 * 1024, // 10MB,
       storage_flush_strategy: StorageFlushStrategy::default(),
+      max_address_length: 255,
     }
   }
 }
@@ -32,6 +35,7 @@ pub struct GeoCacheConfigBuilder {
   storage_file_path: Option<PathBuf>,
   memory_max_size: Option<usize>,
   storage_flush_strategy: Option<StorageFlushStrategy>,
+  max_address_length: Option<usize>,
 }
 
 impl GeoCacheConfigBuilder {
@@ -50,6 +54,11 @@ impl GeoCacheConfigBuilder {
     self
   }
 
+  pub fn max_address_length(mut self, len: usize) -> Self {
+    self.max_address_length = Some(len);
+    self
+  }
+
   pub fn build(self) -> GeoCacheConfig {
     let default = GeoCacheConfig::default();
 
@@ -59,6 +68,7 @@ impl GeoCacheConfigBuilder {
         .storage_flush_strategy
         .unwrap_or(default.storage_flush_strategy),
       memory_max_size: self.memory_max_size.unwrap_or(default.memory_max_size),
+      max_address_length: self.max_address_length.unwrap_or(default.max_address_length),
     }
   }
 }

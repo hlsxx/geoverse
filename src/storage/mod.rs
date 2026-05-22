@@ -10,8 +10,6 @@ use std::{
 
 use crate::cache_key::CacheKey;
 
-// TODO: Convert to the new type
-// Check Address lenght (255 max)
 pub type Address = String;
 
 /// Defines how often to flush data to the persistence disk.

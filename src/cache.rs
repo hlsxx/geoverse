@@ -5,6 +5,7 @@ use std::{error::Error, io, path::PathBuf};
 use crate::{
   cache_config::GeoCacheConfig,
   cache_key::CacheKey,
+  errors::GeoCacheError,
   storage::{Address, Storage, StorageFlushStrategy, StorageStrategy},
 };
 
@@ -115,6 +116,10 @@ impl<S: StorageStrategy + Default> GeoCache<S> {
     (lat, lng, lang): (f64, f64, &str),
     address: Address,
   ) -> Result<(), Box<dyn Error>> {
+    if address.len() > self.config.max_address_length {
+      return Err(Box::new(GeoCacheError::AddressTooLong { len: address.len() }));
+    }
+
     let cache_key = CacheKey::try_new(lat, lng, lang)?;
 
     self.evict_if_needed(address.len())?;

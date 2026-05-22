@@ -22,4 +22,7 @@ pub enum GeoCacheError {
 
   #[error("invalid characters in cache key: {value:?} (only ASCII alphanumeric and '-' allowed)")]
   CacheKeyRawInvalidCharacters { value: String },
+
+  #[error("address too long: expected at most 255 bytes, got {len}")]
+  AddressTooLong { len: usize },
 }

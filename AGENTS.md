@@ -31,6 +31,9 @@ cargo clippy                            # lints
 ## Public API (re-exported from `lib.rs`)
 
 ```rust
-use geoverse::{DequeStorage, GeoCache, GeoCacheConfigBuilder, StorageFlushStrategy};
+use geoverse::{Address, DequeStorage, GeoCache, GeoCacheConfigBuilder, StorageFlushStrategy};
 use geoverse::{convert_coords_into_microdeg, convert_lang_to_u16, convert_u16_to_lang};
 ```
+
+- **`Address`** is a type alias for `String`. Address length is validated (max 255 bytes by default) inside `GeoCache::insert()`, returning `GeoCacheError::AddressTooLong` if exceeded.
+- **Configurable max length**: `GeoCacheConfigBuilder::max_address_length(usize)` overrides the 255 byte default.
