@@ -4,8 +4,9 @@ use geoverse::{DequeStorage, GeoCache, GeoCacheConfigBuilder};
 // Used in storage strategy internal data structures
 const CAPACITY_SIZE: usize = 100;
 
-fn create_example_deque_geo_cache() -> GeoCache<DequeStorage> {
-  GeoCache::with_capacity(GeoCacheConfigBuilder::default().build(), CAPACITY_SIZE)
+fn create_example_deque_geo_cache() -> GeoCache<'static, DequeStorage> {
+  let config = Box::leak(Box::new(GeoCacheConfigBuilder::default().build()));
+  GeoCache::with_capacity(config, CAPACITY_SIZE)
 }
 
 fn bench_insert(c: &mut Criterion) {

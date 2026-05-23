@@ -40,7 +40,7 @@ impl StorageStrategy for DequeStorage {
     Ok(())
   }
 
-  fn get(&self, cache_key: &CacheKey) -> Option<&Address> {
+  fn get(&mut self, cache_key: &CacheKey) -> Option<&Address> {
     self.data.get(cache_key)
   }
 

@@ -135,7 +135,7 @@ impl<'a, S: StorageStrategy + Default> GeoCache<'a, S> {
   /// Retrieves a decoded address from a key.
   /// The key consists of `(latitude, longitude, language_code)`.
   pub fn get(
-    &self,
+    &mut self,
     (lat, lng, lang): (f64, f64, &str),
   ) -> Result<Option<&Address>, Box<dyn Error>> {
     Ok(self.strategy.get(&CacheKey::try_new(lat, lng, lang)?))

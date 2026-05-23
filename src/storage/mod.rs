@@ -37,7 +37,7 @@ pub trait StorageStrategy {
   fn insert(&mut self, cache_key: CacheKey, address: Address) -> Result<(), Box<dyn Error>>;
 
   /// Retrieves the `Address` associated with the given `cache_key`, if it exists.
-  fn get(&self, cache_key: &CacheKey) -> Option<&Address>;
+  fn get(&mut self, cache_key: &CacheKey) -> Option<&Address>;
 
   /// Sets a max memory size
   fn memory_max_size(&mut self, size: usize);
