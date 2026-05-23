@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use geoverse::{DequeStorage, GeoCache, GeoCacheConfigBuilder};
+use geoverse::{DequeStorage, GeoCache, GeoCacheConfigBuilder, LruStorage};
 
 // Used in storage strategy internal data structures
 const CAPACITY_SIZE: usize = 100;
@@ -9,8 +9,13 @@ fn create_example_deque_geo_cache() -> GeoCache<'static, DequeStorage> {
   GeoCache::with_capacity(config, CAPACITY_SIZE)
 }
 
-fn bench_insert(c: &mut Criterion) {
-  let mut group = c.benchmark_group("insert");
+fn create_example_lru_geo_cache() -> GeoCache<'static, LruStorage> {
+  let config = Box::leak(Box::new(GeoCacheConfigBuilder::default().build()));
+  GeoCache::with_capacity(config, CAPACITY_SIZE)
+}
+
+fn bench_deque_insert(c: &mut Criterion) {
+  let mut group = c.benchmark_group("deque_insert");
 
   for size in [100, 1_000, 10_000] {
     group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
@@ -35,8 +40,34 @@ fn bench_insert(c: &mut Criterion) {
   group.finish();
 }
 
-fn bench_get(c: &mut Criterion) {
-  let mut group = c.benchmark_group("get");
+fn bench_lru_insert(c: &mut Criterion) {
+  let mut group = c.benchmark_group("lru_insert");
+
+  for size in [100, 1_000, 10_000] {
+    group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
+      b.iter_batched(
+        || {
+          (0..size)
+            .map(|i| (48.0 + (i as f64 * 0.0001), format!("Address {i}")))
+            .collect::<Vec<_>>()
+        },
+        |data| {
+          let mut geo_cache = create_example_lru_geo_cache();
+          for (lat, addr) in data {
+            geo_cache
+              .insert(std::hint::black_box((lat, 17.1847104, "sk")), addr)
+              .unwrap();
+          }
+        },
+        criterion::BatchSize::SmallInput,
+      );
+    });
+  }
+  group.finish();
+}
+
+fn bench_deque_get(c: &mut Criterion) {
+  let mut group = c.benchmark_group("deque_get");
 
   for size in [100, 1_000, 10_000] {
     group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
@@ -61,5 +92,31 @@ fn bench_get(c: &mut Criterion) {
   group.finish();
 }
 
-criterion_group!(benches, bench_insert, bench_get);
+fn bench_lru_get(c: &mut Criterion) {
+  let mut group = c.benchmark_group("lru_get");
+
+  for size in [100, 1_000, 10_000] {
+    group.bench_with_input(BenchmarkId::from_parameter(size), &size, |b, &size| {
+      let mut geo_cache = create_example_lru_geo_cache();
+      for i in 0..size {
+        let lat = 48.0 + (i as f64 * 0.0001);
+        geo_cache
+          .insert((lat, 17.1847104, "sk"), format!("Address {i}"))
+          .unwrap();
+      }
+
+      b.iter(|| {
+        for i in 0..size {
+          let lat = 48.0 + (i as f64 * 0.0001);
+          geo_cache
+            .get(std::hint::black_box((lat, 17.1847104, "sk")))
+            .unwrap();
+        }
+      });
+    });
+  }
+  group.finish();
+}
+
+criterion_group!(benches, bench_deque_insert, bench_lru_insert, bench_deque_get, bench_lru_get);
 criterion_main!(benches);
