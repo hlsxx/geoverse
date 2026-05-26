@@ -1,7 +1,7 @@
-use geoverse::{DequeStorage, GeoCache, GeoCacheConfigBuilder, StorageFlushStrategy};
+use geoverse::{GeoCache, GeoCacheConfigBuilder, LruStorage, StorageFlushStrategy};
 
 fn main() {
-  let path = "geoverse_deque.bin";
+  let path = "geoverse_lru.bin";
 
   // First session: insert and persist to disk
   {
@@ -10,7 +10,7 @@ fn main() {
       .storage_flush_strategy(StorageFlushStrategy::Immediately)
       .build();
 
-    let mut geo_cache = GeoCache::<DequeStorage>::new(&config);
+    let mut geo_cache = GeoCache::<LruStorage>::new(&config);
     geo_cache.init().unwrap();
 
     geo_cache
@@ -27,13 +27,13 @@ fn main() {
     );
   }
 
-  // Second session: reload from disk
+  // Second session: reload LRU data from disk and verify
   {
     let config = GeoCacheConfigBuilder::default()
       .storage_file_path(path)
       .build();
 
-    let mut geo_cache = GeoCache::<DequeStorage>::new(&config);
+    let mut geo_cache = GeoCache::<LruStorage>::new(&config);
     geo_cache.init().unwrap();
 
     let address = geo_cache
