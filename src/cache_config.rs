@@ -68,7 +68,9 @@ impl GeoCacheConfigBuilder {
         .storage_flush_strategy
         .unwrap_or(default.storage_flush_strategy),
       memory_max_size: self.memory_max_size.unwrap_or(default.memory_max_size),
-      max_address_length: self.max_address_length.unwrap_or(default.max_address_length),
+      max_address_length: self
+        .max_address_length
+        .unwrap_or(default.max_address_length),
     }
   }
 }

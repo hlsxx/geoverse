@@ -448,13 +448,11 @@ mod tests {
 
     assert_eq!(lru.in_memory_record_count(), 2);
     assert_eq!(
-      lru
-        .get(&CacheKey::try_new(48.1645819, 17.1847104, "en").unwrap()),
+      lru.get(&CacheKey::try_new(48.1645819, 17.1847104, "en").unwrap()),
       Some(&"Bratislava, Slovakia".to_string())
     );
     assert_eq!(
-      lru
-        .get(&CacheKey::try_new(50.073658, 14.418540, "en").unwrap()),
+      lru.get(&CacheKey::try_new(50.073658, 14.418540, "en").unwrap()),
       Some(&"Prague, Czechia".to_string())
     );
 

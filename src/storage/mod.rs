@@ -1,4 +1,5 @@
 pub mod deque;
+pub mod lirs;
 pub mod lru;
 
 use std::{

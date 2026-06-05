@@ -14,7 +14,10 @@ fn main() {
     geo_cache.init().unwrap();
 
     geo_cache
-      .insert((48.1645819, 17.1847104, "sk"), "Bratislava, Slovakia".to_string())
+      .insert(
+        (48.1645819, 17.1847104, "sk"),
+        "Bratislava, Slovakia".to_string(),
+      )
       .expect("failed to insert address");
 
     geo_cache
